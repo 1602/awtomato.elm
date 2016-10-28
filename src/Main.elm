@@ -174,66 +174,88 @@ renderBox el =
 
 selector : Element -> Html.Html msg
 selector el =
-    div
-        [ style
-            [ ( "position", "absolute" )
-            , ( "top", "-20px" )
-            , ( "left", "0" )
-            , ( "height", "20px" )
-            , ( "lineHeight", "20px" )
-            , ( "textAlign", "center" )
-            , ( "background", "rgba(255,100,100,0.8)" )
-            , ( "color", "white" )
-            , ( "fontWeight", "bold" )
-            , ( "cursor", "pointer" )
-            , ( "border-radius", "2px" )
-            , ( "top", "-25px" )
-            , ( "left", "0px" )
-            , ( "whiteSpace", "nowrap" )
-            , ( "paddingLeft", "6px" )
-            , ( "background", "#333740" )
-            , ( "paddingRight", "6px" )
-            , ( "fontWeight", "normal" )
-            , ( "fontFamily", "menlo, monospace" )
-            , ( "fontSize", "10px" )
-            , ( "color", "#D9D9D9" )
-            ]
-        ]
-        ([ div
+    let
+        positionOnTop =
+            el.y > 30
+
+        top =
+            if positionOnTop then
+                "-28px"
+            else
+                (toString (el.height + 10)) ++ "px"
+
+        triangleDirection =
+            if positionOnTop then
+                "border-top-color"
+            else
+                "border-bottom-color"
+
+        triangleTop =
+            if positionOnTop then
+                "20px"
+            else
+                "-14px"
+    in
+        div
             [ style
-                [ ( "width", "0" )
-                , ( "height", "0" )
-                , ( "position", "absolute" )
-                , ( "left", "20px" )
-                , ( "top", "20px" )
-                , ( "border", "7px solid transparent" )
-                , ( "border-top-color", "#333740" )
+                [ ( "position", "absolute" )
+                , ( "top", top )
+                , ( "left", "0" )
+                , ( "height", "20px" )
+                , ( "lineHeight", "20px" )
+                , ( "textAlign", "center" )
+                , ( "background", "rgba(255,100,100,0.8)" )
+                , ( "color", "white" )
+                , ( "fontWeight", "bold" )
+                , ( "border-radius", "2px" )
+                , ( "left", "0px" )
+                , ( "whiteSpace", "nowrap" )
+                , ( "paddingLeft", "6px" )
+                , ( "background", "#333740" )
+                , ( "paddingRight", "6px" )
+                , ( "fontWeight", "normal" )
+                , ( "fontFamily", "menlo, monospace" )
+                , ( "fontSize", "10px" )
+                , ( "color", "#D9D9D9" )
+                , ( "z-index", "-1" )
                 ]
             ]
-            []
-         , span [ style [ ( "font-weight", "bold" ), ( "color", "#EE78E6" ) ] ]
-            [ text el.tagName ]
-         , case el.id of
-            Just id ->
-                coloredText "#FFAB66" ("#" ++ id)
-
-            Nothing ->
-                text ""
-         ]
-            ++ (el.classList
-                    |> List.map ((++) ".")
-                    |> List.map (coloredText "#8ED3FB")
-               )
-            ++ [ coloredText "#7F7F7F" " | "
-               , span
-                    [ property "innerHTML"
-                        (Json.Encode.string
-                            ((toString el.width) ++ "&times" ++ (toString el.height))
-                        )
+            ([ div
+                [ style
+                    [ ( "width", "0" )
+                    , ( "height", "0" )
+                    , ( "position", "absolute" )
+                    , ( "z-index", "-1" )
+                    , ( "left", "20px" )
+                    , ( "top", triangleTop )
+                    , ( "border", "7px solid transparent" )
+                    , ( triangleDirection, "#333740" )
                     ]
-                    []
-               ]
-        )
+                ]
+                []
+             , span [ style [ ( "font-weight", "bold" ), ( "color", "#EE78E6" ) ] ]
+                [ text el.tagName ]
+             , case el.id of
+                Just id ->
+                    coloredText "#FFAB66" ("#" ++ id)
+
+                Nothing ->
+                    text ""
+             ]
+                ++ (el.classList
+                        |> List.map ((++) ".")
+                        |> List.map (coloredText "#8ED3FB")
+                   )
+                ++ [ coloredText "#7F7F7F" " | "
+                   , span
+                        [ property "innerHTML"
+                            (Json.Encode.string
+                                ((toString el.width) ++ "&times" ++ (toString el.height))
+                            )
+                        ]
+                        []
+                   ]
+            )
 
 
 coloredText : String -> String -> Html.Html msg
