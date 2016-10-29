@@ -123,6 +123,8 @@ tooltipTriangle isAboveElement =
                 , ( "position", "absolute" )
                 , ( "left", "20px" )
                 , ( "border", "7px solid transparent" )
+                , ( "border-top-color", "7px solid transparent" )
+                , ( "border-bottom-color", "7px solid transparent" )
                 , ( "top", triangleTop )
                 , ( "border-" ++ triangleDirection ++ "-color", "#333740" )
                 ]

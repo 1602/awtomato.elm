@@ -35,11 +35,39 @@ if (!node) {
 
 const elm = Elm.Main.embed(node);
 
-elm.ports.boundingRectAtPosition.subscribe(function ({x, y}) {
+elm.ports.boundingRectAtPosition.subscribe(({x, y}) =>
     elm.ports.activeElement.send(
         getElementByCoordinates(x - sourceWindow.scrollX, y - sourceWindow.scrollY)
-    );
-});
+    )
+);
+
+elm.ports.pickElement.subscribe(elementId =>
+    elm.ports.pickedElements.send(
+        getElementsSimilarTo(elementIdsMap[elementId])
+    )
+);
+
+function getElementsSimilarTo(node) {
+    if (!node) {
+        return [];
+    }
+    const nodes = sourceWindow.document.querySelectorAll(getSelector(node));
+    return Array.prototype.map.call(nodes, makeElement);
+}
+
+function getSelector(node) {
+    let selector = node.tagName;
+
+    if (node.id) {
+        selector += '#' + node.id;
+    }
+
+    if (node.classList.length) {
+        selector += Array.prototype.map.call(node.classList, c => '.' + c).join('')
+    }
+
+    return selector;
+}
 
 function makeElement(node) {
     if (!node) {

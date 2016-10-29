@@ -3,6 +3,7 @@ port module Main exposing (..)
 import Html exposing (div, span, text)
 import Html.App exposing (program)
 import Html.Attributes exposing (..)
+import Html.Events exposing (onClick)
 import Mouse
 import Keyboard
 import Window
@@ -30,6 +31,7 @@ main =
 type alias Model =
     { mouse : Mouse.Position
     , elementUnderCursor : Maybe Element
+    , pickedElements : List Element
     , lookupActive : Bool
     , windowSize : Window.Size
     }
@@ -44,6 +46,7 @@ type alias Element =
     , id : Maybe String
     , tagName : String
     , classList : List String
+    , elementId : Int
     }
 
 
@@ -56,6 +59,7 @@ init =
     (Model
         { x = 0, y = 0 }
         Nothing
+        []
         False
         { width = 800, height = 600 }
     )
@@ -73,6 +77,8 @@ type Msg
     | KeyDown Keyboard.KeyCode
     | KeyUp Keyboard.KeyCode
     | WindowResize Window.Size
+    | PickElement
+    | PickedElements (List Element)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -93,6 +99,17 @@ update msg model =
 
             ActiveElement rect ->
                 { model | elementUnderCursor = rect } ! []
+
+            PickElement ->
+                case model.elementUnderCursor of
+                    Nothing ->
+                        model ! []
+
+                    Just el ->
+                        { model | elementUnderCursor = Nothing } ! [ pickElement el.elementId ]
+
+            PickedElements els ->
+                { model | pickedElements = els } ! []
 
             WindowResize size ->
                 { model | windowSize = size } ! []
@@ -116,6 +133,12 @@ port boundingRectAtPosition : Mouse.Position -> Cmd msg
 port activeElement : (Maybe Element -> msg) -> Sub msg
 
 
+port pickElement : Int -> Cmd msg
+
+
+port pickedElements : (List Element -> msg) -> Sub msg
+
+
 
 -- SUBSCRIPTIONS
 
@@ -127,10 +150,11 @@ subscriptions model =
             Mouse.moves MouseMove
           else
             Sub.none
-        , activeElement ActiveElement
         , Keyboard.ups KeyUp
         , Keyboard.downs KeyDown
         , Window.resizes WindowResize
+        , activeElement ActiveElement
+        , pickedElements PickedElements
         ]
 
 
@@ -140,21 +164,31 @@ subscriptions model =
 
 view : Model -> Html.Html Msg
 view model =
-    case model.elementUnderCursor of
-        Just el ->
-            renderBox el
-                [ selectorTooltip el model.windowSize.height ]
-                [ ( "background", "rgba(130, 240, 90, 0.1)" )
-                , ( "box-shadow", "0 0 0 5px rgba(30, 40, 190, 0.1)" )
-                , ( "border-radius", "2px" )
-                ]
+    let
+        active =
+            case model.elementUnderCursor of
+                Just el ->
+                    renderBox el
+                        [ selectorTooltip el model.windowSize.height ]
+                        PickElement
+                        elementUnderCursorStyle
 
-        Nothing ->
-            text ""
+                Nothing ->
+                    text ""
+
+        picked =
+            model.pickedElements
+                |> List.map renderBox
+                |> List.map (\m -> m [] NoOp pickedElementStyle)
+    in
+        div []
+            [ active
+            , div [] picked
+            ]
 
 
-renderBox : Element -> List (Html.Html Msg) -> InlineStyle -> Html.Html Msg
-renderBox el nodes inlineStyle =
+renderBox : Element -> List (Html.Html Msg) -> Msg -> InlineStyle -> Html.Html Msg
+renderBox el nodes click inlineStyle =
     let
         { x, y, width, height } =
             el
@@ -173,5 +207,24 @@ renderBox el nodes inlineStyle =
                  ]
                     ++ inlineStyle
                 )
+            , onClick click
             ]
             nodes
+
+
+pickedElementStyle : InlineStyle
+pickedElementStyle =
+    [ ( "background", "rgba(30, 130, 30, 0.1)" )
+    , ( "box-shadow", "0 0 0 1px rgba(30, 130, 30, 0.1618)" )
+    , ( "border-radius", "0px" )
+    , ( "z-index", "1" )
+    ]
+
+
+elementUnderCursorStyle : InlineStyle
+elementUnderCursorStyle =
+    [ ( "background", "rgba(130, 240, 90, 0.1)" )
+    , ( "box-shadow", "0 0 0 5px rgba(30, 40, 190, 0.1)" )
+    , ( "border-radius", "2px" )
+    , ( "z-index", "2" )
+    ]
