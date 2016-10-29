@@ -1,6 +1,7 @@
 'use strict';
 
 require('./index.html');
+const { reduce, map, slice } = Array.prototype;
 
 const Elm = require('./Main');
 const sourceWindow = window.opener ? window.opener : window;
@@ -52,7 +53,7 @@ function getElementsSimilarTo(node) {
         return [];
     }
     const nodes = sourceWindow.document.querySelectorAll(getSelector(node));
-    return Array.prototype.map.call(nodes, makeElement);
+    return map.call(nodes, makeElement);
 }
 
 function getSelector(node) {
@@ -63,7 +64,7 @@ function getSelector(node) {
     }
 
     if (node.classList.length) {
-        selector += Array.prototype.map.call(node.classList, c => '.' + c).join('')
+        selector += map.call(node.classList, c => '.' + c).join('')
     }
 
     return selector;
@@ -76,7 +77,7 @@ function makeElement(node) {
     const r = node.getBoundingClientRect();
     const el = {
         tagName: (node.tagName || '').toLowerCase(),
-        classList: Array.prototype.slice.call(node.classList),
+        classList: slice.call(node.classList),
         id: node.id || null,
         elementId: getElementId(node),
         distanceToTop: Math.round(r.top),
@@ -91,7 +92,6 @@ function makeElement(node) {
 function getElementByCoordinates(x, y) {
     // now we get all the elements under cursor
     const elementsFromPoint = sourceWindow.document.elementsFromPoint(x, y);
-    const { reduce, reverse } = Array.prototype;
 
     if (elementsFromPoint.length === 0) {
         return null;
