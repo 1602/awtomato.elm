@@ -51,6 +51,7 @@ function makeElement(node) {
         classList: Array.prototype.slice.call(node.classList),
         id: node.id || null,
         elementId: getElementId(node),
+        distanceToTop: Math.round(r.top),
         x: Math.round(r.left + sourceWindow.scrollX),
         y: Math.round(r.top + sourceWindow.scrollY),
         width: Math.round(r.width),

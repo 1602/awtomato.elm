@@ -5,7 +5,9 @@ import Html.App exposing (program)
 import Html.Attributes exposing (..)
 import Mouse
 import Keyboard
-import Json.Encode
+import Window
+import Task
+import Fragments.SelectorTooltip exposing (selectorTooltip)
 
 
 --import Html.Events exposing (onClick, onInput)
@@ -28,13 +30,15 @@ main =
 type alias Model =
     { mouse : Mouse.Position
     , elementUnderCursor : Maybe Element
-    , meta : Bool
+    , lookupActive : Bool
+    , windowSize : Window.Size
     }
 
 
 type alias Element =
     { x : Int
     , y : Int
+    , distanceToTop : Int
     , width : Int
     , height : Int
     , id : Maybe String
@@ -43,14 +47,19 @@ type alias Element =
     }
 
 
-init : ( Model, Cmd msg )
+type alias InlineStyle =
+    List ( String, String )
+
+
+init : ( Model, Cmd Msg )
 init =
     (Model
         { x = 0, y = 0 }
         Nothing
         False
+        { width = 800, height = 600 }
     )
-        ! []
+        ! [ Task.perform (\_ -> NoOp) (\size -> WindowResize size) Window.size ]
 
 
 
@@ -63,53 +72,42 @@ type Msg
     | ActiveElement (Maybe Element)
     | KeyDown Keyboard.KeyCode
     | KeyUp Keyboard.KeyCode
+    | WindowResize Window.Size
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case msg of
-        NoOp ->
-            model ! []
+    let
+        metaKey =
+            91
 
-        MouseMove pos ->
-            { model | mouse = pos } ! [ boundingRectAtPosition pos ]
-
-        ActiveElement rect ->
-            { model | elementUnderCursor = rect } ! []
-
-        KeyDown code ->
-            if code == 91 then
-                { model | meta = True } ! []
-            else
+        lookup state =
+            { model | lookupActive = state, elementUnderCursor = Nothing }
+    in
+        case msg of
+            NoOp ->
                 model ! []
 
-        KeyUp code ->
-            if code == 91 then
-                { model | meta = False, elementUnderCursor = Nothing } ! []
-            else
-                model ! []
+            MouseMove pos ->
+                { model | mouse = pos } ! [ boundingRectAtPosition pos ]
 
+            ActiveElement rect ->
+                { model | elementUnderCursor = rect } ! []
 
+            WindowResize size ->
+                { model | windowSize = size } ! []
 
-{-
-   Increment ->
-     ({ model | count = model.count + 1 }, Cmd.none)
+            KeyDown code ->
+                if code == metaKey then
+                    lookup True ! []
+                else
+                    model ! []
 
-   Decrement ->
-     ({ model | count = model.count - 1 }, Cmd.none)
-
-   Tick ->
-     ({ model | elapsed = model.elapsed + 1}, Cmd.none)
-
-   Alert ->
-     (model, alert model.alertText)
-
-   ChangeAlertText text ->
-     ({ model | alertText = text }, Cmd.none)
-
-   Log text ->
-     ({ model | logs = text :: model.logs }, Cmd.none)
--}
+            KeyUp code ->
+                if code == metaKey then
+                    lookup False ! []
+                else
+                    model ! []
 
 
 port boundingRectAtPosition : Mouse.Position -> Cmd msg
@@ -125,13 +123,14 @@ port activeElement : (Maybe Element -> msg) -> Sub msg
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ if model.meta then
+        [ if model.lookupActive then
             Mouse.moves MouseMove
           else
             Sub.none
         , activeElement ActiveElement
         , Keyboard.ups KeyUp
         , Keyboard.downs KeyDown
+        , Window.resizes WindowResize
         ]
 
 
@@ -141,128 +140,38 @@ subscriptions model =
 
 view : Model -> Html.Html Msg
 view model =
-    renderBox model.elementUnderCursor
-
-
-renderBox : Maybe Element -> Html.Html Msg
-renderBox el =
-    case el of
+    case model.elementUnderCursor of
         Just el ->
-            let
-                { x, y, width, height } =
-                    el
-            in
-                div
-                    [ style
-                        [ ( "position", "absolute" )
-                        , ( "top", px y )
-                        , ( "left", px x )
-                        , ( "width", px width )
-                        , ( "height", px height )
-                        , ( "background", "rgba(30, 40, 190, 0.2)" )
-                          -- , ( "border", "1px solid rgba(30, 40, 130, 0.5)" )
-                        , ( "box-shadow", "0 0 0 1px rgba(30, 40, 190, 0.5)" )
-                        , ( "border-radius", "2px" )
-                        , ( "z-index", "100000" )
-                        ]
-                    ]
-                    [ selector el ]
+            renderBox el
+                [ selectorTooltip el model.windowSize.height ]
+                [ ( "background", "rgba(130, 240, 90, 0.1)" )
+                , ( "box-shadow", "0 0 0 5px rgba(30, 40, 190, 0.1)" )
+                , ( "border-radius", "2px" )
+                ]
 
         Nothing ->
             text ""
 
 
-selector : Element -> Html.Html msg
-selector el =
+renderBox : Element -> List (Html.Html Msg) -> InlineStyle -> Html.Html Msg
+renderBox el nodes inlineStyle =
     let
-        positionOnTop =
-            el.y > 30
+        { x, y, width, height } =
+            el
 
-        top =
-            if positionOnTop then
-                "-28px"
-            else
-                (toString (el.height + 10)) ++ "px"
-
-        triangleDirection =
-            if positionOnTop then
-                "border-top-color"
-            else
-                "border-bottom-color"
-
-        triangleTop =
-            if positionOnTop then
-                "20px"
-            else
-                "-14px"
+        px n =
+            (toString n) ++ "px"
     in
         div
             [ style
-                [ ( "position", "absolute" )
-                , ( "top", top )
-                , ( "left", "0" )
-                , ( "height", "20px" )
-                , ( "lineHeight", "20px" )
-                , ( "textAlign", "center" )
-                , ( "background", "rgba(255,100,100,0.8)" )
-                , ( "color", "white" )
-                , ( "fontWeight", "bold" )
-                , ( "border-radius", "2px" )
-                , ( "left", "0px" )
-                , ( "whiteSpace", "nowrap" )
-                , ( "paddingLeft", "6px" )
-                , ( "background", "#333740" )
-                , ( "paddingRight", "6px" )
-                , ( "fontWeight", "normal" )
-                , ( "fontFamily", "menlo, monospace" )
-                , ( "fontSize", "10px" )
-                , ( "color", "#D9D9D9" )
-                , ( "z-index", "-1" )
-                ]
+                ([ ( "position", "absolute" )
+                 , ( "z-index", "100000" )
+                 , ( "top", px y )
+                 , ( "left", px x )
+                 , ( "width", px width )
+                 , ( "height", px height )
+                 ]
+                    ++ inlineStyle
+                )
             ]
-            ([ div
-                [ style
-                    [ ( "width", "0" )
-                    , ( "height", "0" )
-                    , ( "position", "absolute" )
-                    , ( "z-index", "-1" )
-                    , ( "left", "20px" )
-                    , ( "top", triangleTop )
-                    , ( "border", "7px solid transparent" )
-                    , ( triangleDirection, "#333740" )
-                    ]
-                ]
-                []
-             , span [ style [ ( "font-weight", "bold" ), ( "color", "#EE78E6" ) ] ]
-                [ text el.tagName ]
-             , case el.id of
-                Just id ->
-                    coloredText "#FFAB66" ("#" ++ id)
-
-                Nothing ->
-                    text ""
-             ]
-                ++ (el.classList
-                        |> List.map ((++) ".")
-                        |> List.map (coloredText "#8ED3FB")
-                   )
-                ++ [ coloredText "#7F7F7F" " | "
-                   , span
-                        [ property "innerHTML"
-                            (Json.Encode.string
-                                ((toString el.width) ++ "&times" ++ (toString el.height))
-                            )
-                        ]
-                        []
-                   ]
-            )
-
-
-coloredText : String -> String -> Html.Html msg
-coloredText color str =
-    span [ style [ ( "color", color ) ] ] [ text str ]
-
-
-px : Int -> String
-px n =
-    (toString n) ++ "px"
+            nodes
