@@ -18,16 +18,19 @@ selectorTooltip :
     }
     -> Int
     -> Html.Html msg
-selectorTooltip el maxScreenHeight =
+selectorTooltip el screenHeight =
     let
+        heightOfTooltip =
+            35
+
         bottomOfTheScreen =
-            maxScreenHeight - 35 - el.distanceToTop
+            screenHeight - heightOfTooltip - el.distanceToTop
 
         topCoordinate =
             min bottomOfTheScreen el.height
 
-        positionOnTop =
-            el.distanceToTop > 30
+        isAboveElement =
+            el.distanceToTop > heightOfTooltip
 
         dimensions =
             span
@@ -56,8 +59,8 @@ selectorTooltip el maxScreenHeight =
                 |> List.map (coloredText "#8ED3FB")
     in
         div
-            [ style (selectorTooltipInlineStyle positionOnTop topCoordinate) ]
-            ([ tooltipTriangle positionOnTop
+            [ style (selectorTooltipInlineStyle isAboveElement topCoordinate) ]
+            ([ tooltipTriangle isAboveElement
              , tag
              , id
              , coloredNodes "#8ED3FB" classes
@@ -68,10 +71,10 @@ selectorTooltip el maxScreenHeight =
 
 
 selectorTooltipInlineStyle : Bool -> Int -> List ( String, String )
-selectorTooltipInlineStyle positionOnTop height =
+selectorTooltipInlineStyle isAboveElement height =
     let
         top =
-            if positionOnTop then
+            if isAboveElement then
                 "-28px"
             else
                 (toString (height + 10)) ++ "px"
@@ -99,16 +102,16 @@ selectorTooltipInlineStyle positionOnTop height =
 
 
 tooltipTriangle : Bool -> Html.Html msg
-tooltipTriangle positionOnTop =
+tooltipTriangle isAboveElement =
     let
         triangleDirection =
-            if positionOnTop then
+            if isAboveElement then
                 "top"
             else
                 "bottom"
 
         triangleTop =
-            if positionOnTop then
+            if isAboveElement then
                 "20px"
             else
                 "-14px"
