@@ -106,8 +106,8 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        metaKey =
-            91
+        lookupActivationKey =
+            18
 
         lookup state =
             { model | lookupActive = state, elementUnderCursor = Nothing }
@@ -156,13 +156,13 @@ update msg model =
                 { model | windowSize = size } ! []
 
             KeyDown code ->
-                if code == metaKey then
+                if code == lookupActivationKey then
                     lookup True ! [ getMousePosition 1 ]
                 else
                     model ! []
 
             KeyUp code ->
-                if code == metaKey then
+                if code == lookupActivationKey then
                     lookup False ! []
                 else
                     model ! []
