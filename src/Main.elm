@@ -123,7 +123,13 @@ update msg model =
                 { model | elementUnderCursor = rect } ! []
 
             Reset ->
-                { model | primaryPick = 0, rejects = Dict.empty, pickedElements = [] } ! []
+                { model
+                    | primaryPick = 0
+                    , rejects = Dict.empty
+                    , pickedElements = []
+                    , selector = ""
+                }
+                    ! []
 
             PickElement ->
                 case model.elementUnderCursor of
