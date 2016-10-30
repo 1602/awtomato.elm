@@ -1,7 +1,7 @@
 'use strict';
 
 require('./index.html');
-const { reduce, map, slice } = Array.prototype;
+const { reduce, map, slice, findIndex } = Array.prototype;
 
 const Elm = require('./Main');
 const sourceWindow = window.opener ? window.opener : window;
@@ -13,7 +13,7 @@ const elementIdsMap = Object.create(null);
 let nextNodeId = 1;
 
 const intersects = ([col1, col2], fn) =>
-    col1.some(a => col2.some(b => fn([a, b])));
+   col1.some(a => col2.some(b => fn([a, b])));
 
 function getElementId(node) {
     let id = elementsMap.get(node);
@@ -42,32 +42,96 @@ elm.ports.boundingRectAtPosition.subscribe(({x, y}) =>
     )
 );
 
-elm.ports.pickElement.subscribe(elementId =>
+elm.ports.pickElement.subscribe(({ elementId, rejects }) =>
     elm.ports.pickedElements.send(
-        getElementsSimilarTo(elementIdsMap[elementId])
+        getElementsSimilarTo(elementIdsMap[elementId], rejects)
     )
 );
 
-function getElementsSimilarTo(node) {
+elm.ports.getMousePosition.subscribe(() =>
+    elm.ports.mousePosition.send(
+        { x: lastKnownMousePositionX, y: lastKnownMousePositionY }
+    )
+);
+
+function getElementsSimilarTo(node, rejects) {
     if (!node) {
-        return [];
+        return { selector: "", elements: [] };
     }
-    const nodes = sourceWindow.document.querySelectorAll(getSelector(node));
-    return map.call(nodes, makeElement);
+
+    const selector = getSelector(node, rejects);
+    const elements = queryAll(selector).map(makeElement);
+
+    return {
+        selector,
+        elements
+    };
 }
 
-function getSelector(node) {
+function getSelector(node, rejects = [], fragment = null) {
     let selector = node.tagName;
 
     if (node.id) {
-        selector += '#' + node.id;
+        // selector += '#' + node.id;
     }
 
     if (node.classList.length) {
         selector += map.call(node.classList, c => '.' + c).join('')
     }
 
-    return selector;
+
+    const elementNode = node;
+    node = elementNode && elementNode.parentNode;
+    let lastEfficientStrictness = selector;
+    let nodesCount;
+    let elements;
+    let requiresCounting = false;
+    if (rejects.length) {
+        elements = queryAll(selector, fragment);
+        nodesCount = elements.length;
+    }
+
+    console.log(rejects);
+    while (rejects.length && node && node.tagName !== 'HTML') {
+        requiresCounting = true;
+        if (elements.map(getElementId).some(id => rejects.includes(id))) {
+            const parentSelector = getSelector(node, [], fragment);
+            selector = parentSelector ? (parentSelector + ' > ') + selector : selector;
+            node = node.parentNode;
+            elements = queryAll(selector, fragment);
+            if (nodesCount > elements.length) {
+                nodesCount = elements.length;
+                lastEfficientStrictness = selector;
+            }
+        } else {
+            requiresCounting = false;
+            break;
+        }
+        if (fragment && elementsMap.has(node) && fragment.includes(elementsMap.get(node))) {
+            break;
+        }
+    }
+
+    if (requiresCounting) {
+        let head = lastEfficientStrictness.split(' > ');
+        let tail = head.pop();
+        head = head.join(' > ');
+        const parent = elementNode.parentNode;
+        const res = parent.children;
+        const index = findIndex.call(res, n => n === elementNode);
+        if (index > -1) {
+            tail += ':nth-child(' + (index + 1) + ')';
+        }
+        lastEfficientStrictness = [head, tail].filter(Boolean).join(' > ');
+    }
+
+    return lastEfficientStrictness;
+
+}
+
+function queryAll(selector) {
+    return slice.call(sourceWindow.document.querySelectorAll(selector))
+        .filter(x => !withinLandingArea(x));
 }
 
 function makeElement(node) {
@@ -102,12 +166,6 @@ function getElementByCoordinates(x, y) {
         return result || withinLandingArea(node) ? result : node;
     }, null));
 
-    function withinLandingArea(node) {
-        return node && (
-            node.id === 'awtomato-landing-area' ||
-            withinLandingArea(node.parentNode)
-        );
-    }
 
 
     // if (within && !within.some(nodeId => isParentNode(node, elementIdsMap[nodeId]))) {
@@ -115,4 +173,19 @@ function getElementByCoordinates(x, y) {
     // }
 
 }
+
+function withinLandingArea(node) {
+    return node && (
+        node.id === 'awtomato-landing-area' ||
+        withinLandingArea(node.parentNode)
+    );
+}
+
+let lastKnownMousePositionX = 0;
+let lastKnownMousePositionY = 0;
+
+window.addEventListener('mousemove', e => {
+    lastKnownMousePositionX = e.pageX;
+    lastKnownMousePositionY = e.pageY;
+});
 

@@ -4,6 +4,7 @@ import Html exposing (div, span, text)
 import Html.App exposing (program)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
+import Dict
 import Mouse
 import Keyboard
 import Window
@@ -33,9 +34,16 @@ type alias Model =
     { mouse : Mouse.Position
     , elementUnderCursor : Maybe Element
     , pickedElements : List Element
+    , primaryPick : Int
     , lookupActive : Bool
     , windowSize : Window.Size
+    , rejects : Rejects
+    , selector : String
     }
+
+
+type alias Rejects =
+    Dict.Dict Int Element
 
 
 type alias Element =
@@ -51,6 +59,12 @@ type alias Element =
     }
 
 
+type alias PickingResult =
+    { selector : String
+    , elements : List Element
+    }
+
+
 type alias InlineStyle =
     List ( String, String )
 
@@ -61,8 +75,11 @@ init =
         { x = 0, y = 0 }
         Nothing
         []
+        0
         False
         { width = 800, height = 600 }
+        Dict.empty
+        ""
     )
         ! [ Task.perform (\_ -> NoOp) (\size -> WindowResize size) Window.size ]
 
@@ -105,23 +122,42 @@ update msg model =
             ActiveElement rect ->
                 { model | elementUnderCursor = rect } ! []
 
+            Reset ->
+                { model | primaryPick = 0, rejects = Dict.empty, pickedElements = [] } ! []
+
             PickElement ->
                 case model.elementUnderCursor of
                     Nothing ->
                         model ! []
 
                     Just el ->
-                        { model | elementUnderCursor = Nothing } ! [ pickElement el.elementId ]
+                        update QueryPage
+                            { model
+                                | elementUnderCursor = Nothing
+                                , primaryPick = el.elementId
+                                , rejects = Dict.empty
+                            }
 
-            PickedElements els ->
-                { model | pickedElements = els } ! []
+            QueryPage ->
+                model
+                    ! [ pickElement
+                            { elementId = model.primaryPick
+                            , rejects = Dict.keys model.rejects
+                            }
+                      ]
+
+            ToggleReject element ->
+                update QueryPage { model | rejects = toggle model.rejects element }
+
+            PickedElements { selector, elements } ->
+                { model | pickedElements = elements, selector = selector } ! []
 
             WindowResize size ->
                 { model | windowSize = size } ! []
 
             KeyDown code ->
                 if code == metaKey then
-                    lookup True ! []
+                    lookup True ! [ getMousePosition 1 ]
                 else
                     model ! []
 
@@ -153,10 +189,16 @@ port boundingRectAtPosition : Mouse.Position -> Cmd msg
 port activeElement : (Maybe Element -> msg) -> Sub msg
 
 
-port pickElement : Int -> Cmd msg
+port pickElement : { elementId : Int, rejects : List Int } -> Cmd msg
 
 
-port pickedElements : (List Element -> msg) -> Sub msg
+port pickedElements : (PickingResult -> msg) -> Sub msg
+
+
+port getMousePosition : Int -> Cmd msg
+
+
+port mousePosition : (Mouse.Position -> msg) -> Sub msg
 
 
 
@@ -190,22 +232,65 @@ view model =
         active =
             case model.elementUnderCursor of
                 Just el ->
-                    renderBox el
-                        [ selectorTooltip el model.windowSize.height ]
-                        PickElement
-                        elementUnderCursorStyle
+                    if el.elementId /= model.primaryPick then
+                        renderBox el
+                            [ selectorTooltip el model.windowSize.height ]
+                            PickElement
+                            elementUnderCursorStyle
+                    else
+                        text ""
 
                 Nothing ->
                     text ""
 
         picked =
             model.pickedElements
-                |> List.map renderBox
-                |> List.map (\m -> m [] NoOp pickedElementStyle)
+                |> List.map
+                    (\el ->
+                        renderBox el
+                            []
+                            (if el.elementId == model.primaryPick then
+                                Reset
+                             else
+                                ToggleReject el
+                            )
+                            (if el.elementId == model.primaryPick then
+                                primaryPickStyle
+                             else
+                                pickedElementStyle
+                            )
+                    )
+
+        rejected =
+            model.rejects
+                |> Dict.values
+                |> List.map (\el -> renderBox el [] (ToggleReject el) rejectedElementStyle)
     in
         div []
             [ active
             , div [] picked
+            , div [] rejected
+            , div
+                [ style
+                    [ ( "position", "fixed" )
+                    , ( "bottom", "0" )
+                    , ( "left", "0" )
+                    , ( "padding", "10px" )
+                    , ( "background", "white" )
+                    , ( "color", "black" )
+                    , ( "font-family", "menlo, monospaced" )
+                    , ( "font-size", "16px" )
+                    ]
+                ]
+                [ text model.selector
+                , div
+                    [ style
+                        [ ( "font-size", "10px" )
+                        , ( "color", "grey" )
+                        ]
+                    ]
+                    [ text ((toString (List.length model.pickedElements)) ++ " elem.") ]
+                ]
             ]
 
 
@@ -237,9 +322,29 @@ renderBox el nodes click inlineStyle =
 pickedElementStyle : InlineStyle
 pickedElementStyle =
     [ ( "background", "rgba(30, 130, 30, 0.1)" )
-    , ( "box-shadow", "0 0 0 1px rgba(30, 130, 30, 0.1618)" )
+    , ( "box-shadow", "0 0 0 2px rgba(30, 130, 30, 0.1618)" )
     , ( "border-radius", "0px" )
     , ( "z-index", "1" )
+    , ( "cursor", "-webkit-grabbing" )
+    ]
+
+
+primaryPickStyle : InlineStyle
+primaryPickStyle =
+    [ ( "background", "rgba(30, 30, 230, 0.1)" )
+    , ( "box-shadow", "0 0 0 5px rgba(30, 30, 230, 0.1618)" )
+    , ( "border-radius", "0px" )
+    , ( "z-index", "1" )
+    ]
+
+
+rejectedElementStyle : InlineStyle
+rejectedElementStyle =
+    [ ( "background", "none" )
+    , ( "box-shadow", "0 0 0 2px rgba(130, 30, 30, 0.1618)" )
+    , ( "border-radius", "0px" )
+    , ( "z-index", "1" )
+    , ( "cursor", "-webkit-grab" )
     ]
 
 
@@ -247,6 +352,7 @@ elementUnderCursorStyle : InlineStyle
 elementUnderCursorStyle =
     [ ( "background", "rgba(130, 240, 90, 0.1)" )
     , ( "box-shadow", "0 0 0 5px rgba(30, 40, 190, 0.1)" )
-    , ( "border-radius", "2px" )
+    , ( "border-radius", "0px" )
     , ( "z-index", "2" )
+    , ( "cursor", "-webkit-grab" )
     ]
