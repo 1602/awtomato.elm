@@ -103,19 +103,21 @@ selectorTooltipInlineStyle isAboveElement height =
 
 tooltipTriangle : Bool -> Html.Html msg
 tooltipTriangle isAboveElement =
-    let
-        triangleDirection =
-            if isAboveElement then
-                "top"
-            else
-                "bottom"
-
-        triangleTop =
-            if isAboveElement then
-                "20px"
-            else
-                "-14px"
-    in
+    if isAboveElement then
+        div
+            [ style
+                [ ( "width", "0" )
+                , ( "height", "0" )
+                , ( "position", "absolute" )
+                , ( "left", "20px" )
+                , ( "top", "20px" )
+                , ( "border", "7px solid transparent" )
+                , ( "border-top-color", "#333740" )
+                , ( "border-bottom-color", "transparent" )
+                ]
+            ]
+            []
+    else
         div
             [ style
                 [ ( "width", "0" )
@@ -123,10 +125,9 @@ tooltipTriangle isAboveElement =
                 , ( "position", "absolute" )
                 , ( "left", "20px" )
                 , ( "border", "7px solid transparent" )
-                , ( "border-top-color", "7px solid transparent" )
-                , ( "border-bottom-color", "7px solid transparent" )
-                , ( "top", triangleTop )
-                , ( "border-" ++ triangleDirection ++ "-color", "#333740" )
+                , ( "top", "-14px" )
+                , ( "border-bottom-color", "#333740" )
+                , ( "border-top-color", "transparent" )
                 ]
             ]
             []
