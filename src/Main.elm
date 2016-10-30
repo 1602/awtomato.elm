@@ -8,6 +8,7 @@ import Mouse
 import Keyboard
 import Window
 import Task
+import PageVisibility
 import Fragments.SelectorTooltip exposing (selectorTooltip)
 
 
@@ -78,7 +79,11 @@ type Msg
     | KeyUp Keyboard.KeyCode
     | WindowResize Window.Size
     | PickElement
-    | PickedElements (List Element)
+    | PickedElements PickingResult
+    | ToggleReject Element
+    | QueryPage
+    | Reset
+    | VisibilityChange PageVisibility.Visibility
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -126,6 +131,21 @@ update msg model =
                 else
                     model ! []
 
+            VisibilityChange vis ->
+                { model | lookupActive = Debug.log "change visi" False } ! []
+
+
+toggle : Rejects -> Element -> Rejects
+toggle dict element =
+    if Dict.member element.elementId dict then
+        Dict.remove element.elementId dict
+    else
+        Dict.insert element.elementId element dict
+
+
+
+-- PORTS
+
 
 port boundingRectAtPosition : Mouse.Position -> Cmd msg
 
@@ -155,6 +175,8 @@ subscriptions model =
         , Window.resizes WindowResize
         , activeElement ActiveElement
         , pickedElements PickedElements
+        , mousePosition MouseMove
+        , PageVisibility.visibilityChanges VisibilityChange
         ]
 
 
