@@ -341,6 +341,7 @@ primaryPickStyle =
     , ( "box-shadow", "0 0 0 5px rgba(30, 30, 230, 0.1618)" )
     , ( "border-radius", "0px" )
     , ( "z-index", "1" )
+    , ( "cursor", "-webkit-grabbing" )
     ]
 
 
