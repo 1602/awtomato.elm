@@ -32,11 +32,16 @@ main =
 
 type alias Model =
     { mouse : Mouse.Position
-    , elementUnderCursor : Maybe Element
-    , pickedElements : List Element
-    , primaryPick : Int
-    , lookupActive : Bool
     , windowSize : Window.Size
+    , elementUnderCursor : Maybe Element
+    , lookupActive : Bool
+    , entity : Entity
+    }
+
+
+type alias Entity =
+    { primaryPick : Int
+    , pickedElements : List Element
     , rejects : Rejects
     , selector : String
     }
@@ -73,13 +78,10 @@ init : ( Model, Cmd Msg )
 init =
     (Model
         { x = 0, y = 0 }
-        Nothing
-        []
-        0
-        False
         { width = 800, height = 600 }
-        Dict.empty
-        ""
+        Nothing
+        False
+        (Entity 0 [] Dict.empty "")
     )
         ! [ Task.perform (\_ -> NoOp) (\size -> WindowResize size) Window.size ]
 
@@ -111,6 +113,9 @@ update msg model =
 
         lookup state =
             { model | lookupActive = state, elementUnderCursor = Nothing }
+
+        entity =
+            model.entity
     in
         case msg of
             NoOp ->
@@ -124,10 +129,13 @@ update msg model =
 
             Reset ->
                 { model
-                    | primaryPick = 0
-                    , rejects = Dict.empty
-                    , pickedElements = []
-                    , selector = ""
+                    | entity =
+                        { entity
+                            | primaryPick = 0
+                            , rejects = Dict.empty
+                            , pickedElements = []
+                            , selector = ""
+                        }
                 }
                     ! []
 
@@ -140,23 +148,35 @@ update msg model =
                         update QueryPage
                             { model
                                 | elementUnderCursor = Nothing
-                                , primaryPick = el.elementId
-                                , rejects = Dict.empty
+                                , entity =
+                                    { entity
+                                        | primaryPick = el.elementId
+                                        , rejects = Dict.empty
+                                    }
                             }
 
             QueryPage ->
                 model
                     ! [ pickElement
-                            { elementId = model.primaryPick
-                            , rejects = Dict.keys model.rejects
+                            { elementId = entity.primaryPick
+                            , rejects = Dict.keys entity.rejects
                             }
                       ]
 
             ToggleReject element ->
-                update QueryPage { model | rejects = toggle model.rejects element }
+                update QueryPage
+                    { model
+                        | entity =
+                            { entity
+                                | rejects = toggle entity.rejects element
+                            }
+                    }
 
             PickedElements { selector, elements } ->
-                { model | pickedElements = elements, selector = selector } ! []
+                { model
+                    | entity = { entity | pickedElements = elements, selector = selector }
+                }
+                    ! []
 
             WindowResize size ->
                 { model | windowSize = size } ! []
@@ -235,10 +255,13 @@ subscriptions model =
 view : Model -> Html.Html Msg
 view model =
     let
+        entity =
+            model.entity
+
         active =
             case model.elementUnderCursor of
                 Just el ->
-                    if el.elementId /= model.primaryPick then
+                    if el.elementId /= entity.primaryPick then
                         renderBox el
                             [ selectorTooltip el model.windowSize.height ]
                             PickElement
@@ -250,17 +273,17 @@ view model =
                     text ""
 
         picked =
-            model.pickedElements
+            entity.pickedElements
                 |> List.map
                     (\el ->
                         renderBox el
                             []
-                            (if el.elementId == model.primaryPick then
+                            (if el.elementId == entity.primaryPick then
                                 Reset
                              else
                                 ToggleReject el
                             )
-                            (if el.elementId == model.primaryPick then
+                            (if el.elementId == entity.primaryPick then
                                 primaryPickStyle
                              else
                                 pickedElementStyle
@@ -268,7 +291,7 @@ view model =
                     )
 
         rejected =
-            model.rejects
+            entity.rejects
                 |> Dict.values
                 |> List.map (\el -> renderBox el [] (ToggleReject el) rejectedElementStyle)
     in
@@ -288,14 +311,14 @@ view model =
                     , ( "font-size", "16px" )
                     ]
                 ]
-                [ text model.selector
+                [ text entity.selector
                 , div
                     [ style
                         [ ( "font-size", "10px" )
                         , ( "color", "grey" )
                         ]
                     ]
-                    [ text ((toString (List.length model.pickedElements)) ++ " elem.") ]
+                    [ text ((toString (List.length entity.pickedElements)) ++ " elem.") ]
                 ]
             ]
 
