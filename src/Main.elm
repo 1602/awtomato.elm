@@ -1,7 +1,7 @@
 port module Main exposing (..)
 
 import Html exposing (div, span, text)
-import Html.App exposing (program)
+import Html exposing (program)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Dict
@@ -16,7 +16,7 @@ import Fragments.SelectorTooltip exposing (selectorTooltip)
 --import Html.Events exposing (onClick, onInput)
 
 
-main : Program Never
+main : Program Never Model Msg
 main =
     program
         { init = init
@@ -82,8 +82,7 @@ init =
         Nothing
         False
         (Entity 0 [] Dict.empty "")
-    )
-        ! [ Task.perform (\_ -> NoOp) (\size -> WindowResize size) Window.size ]
+    ) !  [ Task.attempt WindowResize Window.size ]
 
 
 
@@ -96,7 +95,8 @@ type Msg
     | ActiveElement (Maybe Element)
     | KeyDown Keyboard.KeyCode
     | KeyUp Keyboard.KeyCode
-    | WindowResize Window.Size
+    | WindowResize (Result String Window.Size)
+    | WindowResized Window.Size
     | PickElement
     | PickedElements PickingResult
     | ToggleReject Element
@@ -178,7 +178,14 @@ update msg model =
                 }
                     ! []
 
-            WindowResize size ->
+            WindowResize res ->
+                case res of
+                    Ok size ->
+                        { model | windowSize = size } ! []
+                    Err _ ->
+                        model ! []
+
+            WindowResized size ->
                 { model | windowSize = size } ! []
 
             KeyDown code ->
@@ -240,7 +247,7 @@ subscriptions model =
             Sub.none
         , Keyboard.ups KeyUp
         , Keyboard.downs KeyDown
-        , Window.resizes WindowResize
+        , Window.resizes WindowResized
         , activeElement ActiveElement
         , pickedElements PickedElements
         , mousePosition MouseMove
