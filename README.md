@@ -8,5 +8,5 @@ javascript:(function (src){ var d = window.document; d.head.appendChild(d.create
 
 prod bookmarklet:
 
-[pick](javascript:(function (src){ var d = window.document; d.head.appendChild(d.createElement('script')).src = src}('https://1602.github.io/awtomato.elm/index.js')));
+<a href="javascript:(function (src){ var d = window.document; d.head.appendChild(d.createElement('script')).src = src}('https://1602.github.io/awtomato.elm/index.js'))">pick</a>
 
