@@ -82,7 +82,7 @@ init =
         Nothing
         False
         (Entity 0 [] Dict.empty "")
-    ) !  [ Task.attempt WindowResize Window.size ]
+    ) !  [ Task.perform WindowResize Window.size ]
 
 
 
@@ -95,8 +95,7 @@ type Msg
     | ActiveElement (Maybe Element)
     | KeyDown Keyboard.KeyCode
     | KeyUp Keyboard.KeyCode
-    | WindowResize (Result String Window.Size)
-    | WindowResized Window.Size
+    | WindowResize Window.Size
     | PickElement
     | PickedElements PickingResult
     | ToggleReject Element
@@ -178,14 +177,7 @@ update msg model =
                 }
                     ! []
 
-            WindowResize res ->
-                case res of
-                    Ok size ->
-                        { model | windowSize = size } ! []
-                    Err _ ->
-                        model ! []
-
-            WindowResized size ->
+            WindowResize size ->
                 { model | windowSize = size } ! []
 
             KeyDown code ->
@@ -247,7 +239,7 @@ subscriptions model =
             Sub.none
         , Keyboard.ups KeyUp
         , Keyboard.downs KeyDown
-        , Window.resizes WindowResized
+        , Window.resizes WindowResize
         , activeElement ActiveElement
         , pickedElements PickedElements
         , mousePosition MouseMove
