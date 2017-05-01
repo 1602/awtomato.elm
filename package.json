@@ -5,7 +5,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "webpack-dev-server --https --hot --inline --port 3000",
+    "start": "webpack-dev-server --https --hot --inline --port 3000",
     "build": "webpack"
   },
   "author": "",
