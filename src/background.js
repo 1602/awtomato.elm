@@ -4,19 +4,135 @@ window.devtoolsSidebarConnections = window.devtoolsSidebarConnections || {};
 window.contentScriptConnections = window.contentScriptConnections || {};
 
 window.automate = async function(tabId) {
+
     chrome.tabs.get(tabId, async tab => {
+        const page = createPageInterface(tabId);
         const host = tab.url.split('/')[2];
         const store = JSON.parse(localStorage.store);
         const contexts = store.hostData[host].contexts;
-        const matchedContext = await match(contexts);
-        console.info(matchedContext);
-        // fillForm(matchedContext);
+        const matchedContext = await match(page, contexts);
+        console.info('matched context', matchedContext);
+        await executeContext(page, matchedContext);
     });
 
-    async function match(ctxs) {
+    async function executeContext(page, context) {
+        const selectors = context.selectors.map(s => s.entity.selector);
+        console.info(selectors);
+        const fillableSelectors = await getFillableSelectors(page, selectors);
+        const interactableSelectors = await getInteractableSelectors(page, selectors);
+        await fillDataIn(page, fillableSelectors);
+        await interactWith(page, interactableSelectors);
+    }
+
+    async function getFillableSelectors(page, selectors) {
+        const result = [];
+        for (let i = 0; i < selectors.length; i += 1) {
+            const isFillable = await page.callFn(checkFillable, [selectors[i]]);
+            console.info(selectors[i], isFillable);
+            if (isFillable) {
+                result.push(selectors[i]);
+            }
+        }
+        return result;
+    }
+
+    async function getInteractableSelectors(page, selectors) {
+        const result = [];
+        for (let i = 0; i < selectors.length; i += 1) {
+            const isFillable = await page.callFn(checkInteractable, [selectors[i]]);
+            if (isFillable) {
+                result.push(selectors[i]);
+            }
+        }
+        return result;
+    }
+
+    function checkFillable(selector) {
+        const el = document.querySelector(selector);
+
+        if (!el) {
+            return false;
+        }
+
+        if (el.tagName === 'INPUT' && el.type !== 'button' && el.type !== 'submit' && el.type !== 'image') {
+            return true;
+        }
+
+        return false;
+    }
+
+    function checkInteractable(selector) {
+        const el = document.querySelector(selector);
+
+        if (!el) {
+            return false;
+        }
+
+        if (el.tagName !== 'INPUT' || (el.type === 'button' || el.type === 'submit' || el.type === 'image')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    async function fillDataIn(page, selectors) {
+        console.info('fill in', selectors);
+        for (let i = 0; i < selectors.length; i += 1) {
+            await page.callFn(selector => {
+                const el = document.querySelector(selector);
+                if (el.name.match(/username/)) {
+                    el.value = '';
+                } else if (el.name.match(/password/)) {
+                    el.focus();
+                    const e = document.createEvent('KeyboardEvent');
+                    e.initKeyboardEvent('keydown', true, true, null, 'P', 'P');
+                    el.dispatchEvent(e);
+                    el.value = '';
+                    el.blur();
+                }
+            }, [selectors[i]]);
+        }
+    }
+
+    async function interactWith(page, selectors) {
+        console.info('interact with', selectors);
+        for (let i = 0; i < selectors.length; i += 1) {
+            await page.callFn(selector => {
+                const el = document.querySelector(selector);
+
+                const e = document.createEvent('MouseEvent');
+                e.initMouseEvent('click', true, true);
+                el.dispatchEvent(e);
+            }, [selectors[i]]);
+        }
+    }
+
+    function createPageInterface(tabId) {
+        function eval(code) {
+            return new Promise((resolve, reject) => {
+                chrome.tabs.executeScript(tabId, { code }, result => {
+                    if (chrome.runtime.lastError) {
+                        return reject(chrome.runtime.lastError);
+                    }
+                    setTimeout(() => resolve(result[0]), 1000);
+                });
+            });
+        }
+
+        return {
+            eval,
+            callFn: (fn, args) =>
+                eval('(' + fn.toString() + ')(' + args.map(x => JSON.stringify(x)).join(',') + ')'),
+        };
+    }
+
+    async function match(page, ctxs) {
         let matched = null;
         for (let i = 0; i < ctxs.length; i += 1) {
-            const isMatched = await matchSelection(ctxs[i].selectors.map(s => s.entity.selector));
+            if (ctxs[i].selectors.length === 0) {
+                continue;
+            }
+            const isMatched = await matchSelection(page, ctxs[i].selectors.map(s => s.entity.selector));
             if (isMatched) {
                 matched = ctxs[i];
                 break;
@@ -25,18 +141,8 @@ window.automate = async function(tabId) {
         return matched;
     }
 
-    async function matchSelection(listSelectors) {
-        return new Promise((resolve, reject) => {
-            chrome.tabs.executeScript(tabId, {
-                code: '(' + checkSelectors.toString() + ')(' + JSON.stringify(listSelectors) + ')',
-            }, result => {
-                if (chrome.runtime.lastError) {
-                    return reject(chrome.runtime.lastError);
-                }
-                console.info(result);
-                resolve(result);
-            });
-        });
+    async function matchSelection(page, listSelectors) {
+        return await page.callFn(checkSelectors, [listSelectors]);
     }
 
     function checkSelectors(selectors) {
