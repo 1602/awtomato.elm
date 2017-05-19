@@ -1,6 +1,4 @@
-## Usage
+## Basic Automation Chrome Extension
 
-dev bookmarklet source code:
-```
-javascript:(function (src){ var d = window.document; d.head.appendChild(d.createElement('script')).src = src}('https://localhost:3000/index.js'));
-```
+Automate simple stuff like checking the status of your Amazon orders, updating British Gas meter readings or booking as EasyJet flight to Palma.
+

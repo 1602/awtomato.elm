@@ -1,0 +1,7 @@
+body { color: #eee; padding: 0; margin: 0; background: #222; }
+.tag-name { color: rgb(93, 176, 215); }
+.tag { list-style: none; }
+.tag:hover { background: rgb(199, 134, 38); }
+.tag:hover .tag-name { color: #444; }
+.tag:hover .inner-text { color: black; }
+.inner-text { color: #ddd; }

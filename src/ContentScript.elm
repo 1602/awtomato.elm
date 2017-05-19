@@ -1,4 +1,4 @@
-port module Main exposing (..)
+port module ContentScript exposing (..)
 
 import Html exposing (div, span, text)
 import Html exposing (program)
@@ -9,7 +9,6 @@ import Mouse
 import Keyboard
 import Window
 import Task
-import PageVisibility
 import Fragments.SelectorTooltip exposing (selectorTooltip)
 
 
@@ -36,6 +35,7 @@ type alias Model =
     , elementUnderCursor : Maybe Element
     , lookupActive : Bool
     , entity : Entity
+    , devtoolsReady : Bool
     }
 
 
@@ -82,7 +82,9 @@ init =
         Nothing
         False
         (Entity 0 [] Dict.empty "")
-    ) !  [ Task.perform WindowResize Window.size ]
+        False
+    )
+        ! [ Task.perform WindowResize Window.size ]
 
 
 
@@ -91,6 +93,7 @@ init =
 
 type Msg
     = NoOp
+    | DevtoolsReady Bool
     | MouseMove Mouse.Position
     | ActiveElement (Maybe Element)
     | KeyDown Keyboard.KeyCode
@@ -101,7 +104,6 @@ type Msg
     | ToggleReject Element
     | QueryPage
     | Reset
-    | VisibilityChange PageVisibility.Visibility
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -120,6 +122,14 @@ update msg model =
             NoOp ->
                 model ! []
 
+            DevtoolsReady isReady ->
+                { model
+                    | devtoolsReady = isReady
+                    , lookupActive = False
+                    , elementUnderCursor = Nothing
+                }
+                    ! []
+
             MouseMove pos ->
                 { model | mouse = pos } ! [ boundingRectAtPosition pos ]
 
@@ -135,6 +145,7 @@ update msg model =
                             , pickedElements = []
                             , selector = ""
                         }
+                    , lookupActive = False
                 }
                     ! []
 
@@ -172,10 +183,10 @@ update msg model =
                     }
 
             PickedElements { selector, elements } ->
-                { model
-                    | entity = { entity | pickedElements = elements, selector = selector }
-                }
-                    ! []
+                let
+                    e = model.entity
+                in
+                    { model | entity = { e | selector = selector, pickedElements = elements }} ! []
 
             WindowResize size ->
                 { model | windowSize = size } ! []
@@ -187,13 +198,10 @@ update msg model =
                     model ! []
 
             KeyUp code ->
-                if code == lookupActivationKey then
+                if code == lookupActivationKey && model.lookupActive then
                     lookup False ! []
                 else
                     model ! []
-
-            VisibilityChange vis ->
-                { model | lookupActive = Debug.log "change visi" False } ! []
 
 
 toggle : Rejects -> Element -> Rejects
@@ -214,6 +222,9 @@ port boundingRectAtPosition : Mouse.Position -> Cmd msg
 port activeElement : (Maybe Element -> msg) -> Sub msg
 
 
+port resetSelection : (Bool -> msg) -> Sub msg
+
+
 port pickElement : { elementId : Int, rejects : List Int } -> Cmd msg
 
 
@@ -224,6 +235,12 @@ port getMousePosition : Int -> Cmd msg
 
 
 port mousePosition : (Mouse.Position -> msg) -> Sub msg
+
+
+port saveElement : String -> Cmd msg
+
+
+port devtoolsReady : (Bool -> msg) -> Sub msg
 
 
 
@@ -237,13 +254,20 @@ subscriptions model =
             Mouse.moves MouseMove
           else
             Sub.none
-        , Keyboard.ups KeyUp
-        , Keyboard.downs KeyDown
+        , if model.devtoolsReady then
+            Keyboard.ups KeyUp
+          else
+            Sub.none
+        , if model.devtoolsReady then
+            Keyboard.downs KeyDown
+          else
+            Sub.none
         , Window.resizes WindowResize
         , activeElement ActiveElement
+        , resetSelection (\s -> Reset)
         , pickedElements PickedElements
         , mousePosition MouseMove
-        , PageVisibility.visibilityChanges VisibilityChange
+        , devtoolsReady DevtoolsReady
         ]
 
 
@@ -293,32 +317,14 @@ view model =
             entity.rejects
                 |> Dict.values
                 |> List.map (\el -> renderBox el [] (ToggleReject el) rejectedElementStyle)
+
+        len =
+            List.length entity.pickedElements
     in
         div []
             [ active
             , div [] picked
             , div [] rejected
-            , div
-                [ style
-                    [ ( "position", "fixed" )
-                    , ( "bottom", "0" )
-                    , ( "left", "0" )
-                    , ( "padding", "10px" )
-                    , ( "background", "white" )
-                    , ( "color", "black" )
-                    , ( "font-family", "menlo, monospaced" )
-                    , ( "font-size", "16px" )
-                    ]
-                ]
-                [ text entity.selector
-                , div
-                    [ style
-                        [ ( "font-size", "10px" )
-                        , ( "color", "grey" )
-                        ]
-                    ]
-                    [ text ((toString (List.length entity.pickedElements)) ++ " elem.") ]
-                ]
             ]
 
 
@@ -334,7 +340,7 @@ renderBox el nodes click inlineStyle =
         div
             [ style
                 ([ ( "position", "absolute" )
-                 , ( "z-index", "100000" )
+                 , ( "z-index", "9999999999999" )
                  , ( "top", px y )
                  , ( "left", px x )
                  , ( "width", px width )
@@ -352,7 +358,7 @@ pickedElementStyle =
     [ ( "background", "rgba(30, 130, 30, 0.1)" )
     , ( "box-shadow", "0 0 0 2px rgba(30, 130, 30, 0.1618)" )
     , ( "border-radius", "0px" )
-    , ( "z-index", "1" )
+    , ( "z-index", "9999999999999998" )
     , ( "cursor", "-webkit-grabbing" )
     ]
 
@@ -362,7 +368,7 @@ primaryPickStyle =
     [ ( "background", "rgba(30, 30, 230, 0.1)" )
     , ( "box-shadow", "0 0 0 5px rgba(30, 30, 230, 0.1618)" )
     , ( "border-radius", "0px" )
-    , ( "z-index", "1" )
+    , ( "z-index", "9999999999999998" )
     , ( "cursor", "-webkit-grabbing" )
     ]
 
@@ -372,7 +378,7 @@ rejectedElementStyle =
     [ ( "background", "none" )
     , ( "box-shadow", "0 0 0 2px rgba(130, 30, 30, 0.1618)" )
     , ( "border-radius", "0px" )
-    , ( "z-index", "1" )
+    , ( "z-index", "9999999999999998" )
     , ( "cursor", "-webkit-grab" )
     ]
 
@@ -382,6 +388,6 @@ elementUnderCursorStyle =
     [ ( "background", "rgba(130, 240, 90, 0.1)" )
     , ( "box-shadow", "0 0 0 5px rgba(30, 40, 190, 0.1)" )
     , ( "border-radius", "0px" )
-    , ( "z-index", "2" )
+    , ( "z-index", "9999999999999999" )
     , ( "cursor", "-webkit-grab" )
     ]

@@ -1,0 +1,20 @@
+{
+  "extends": "ub",
+  "env": {
+    "es6": true,
+    "node": true,
+    "browser": true
+  },
+  "globals": {
+    "chrome": true,
+    "Immutable": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 8,
+    "sourceType": "script"
+  },
+  "rules": {
+    "init-declarations": [2, "always"],
+    "no-console": [2, { "allow": ["info", "warn", "error"] }]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "Basic Automation",
+  "version": "1.0.1",
+  "manifest_version": 2,
+  "minimum_chrome_version": "10.0",
+  "devtools_page": "automation-devtools.html",
+  "icons": {
+      "128": "assets/tomato.png"
+  },
+  "background": {
+      "scripts": ["background.js"]
+  },
+  "permissions": [
+      "*://*/", "tabs", "storage", "activeTab"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["content-script.js"]
+    }
+  ],
+  "content_security_policy": "script-src 'self' http://localhost:3000 'unsafe-eval'; object-src 'self'"
+
+}
