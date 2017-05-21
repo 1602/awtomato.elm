@@ -1,25 +1,52 @@
 /* global devtoolsPanelConnections devtoolsSidebarConnections contentScriptConnections */
+
 window.devtoolsPanelConnections = window.devtoolsPanelConnections || {};
 window.devtoolsSidebarConnections = window.devtoolsSidebarConnections || {};
 window.contentScriptConnections = window.contentScriptConnections || {};
 
+let rfi = null;
+let elm = null;
+
+const { Background } = require('./Background.elm');
+
+window.addEventListener('DOMContentLoaded', () => {
+    elm = Background.fullscreen();
+    elm.ports.answer.subscribe(answer => {
+        rfi.resolve(answer);
+    });
+});
+
+chrome.browserAction.onClicked.addListener(tab => {
+    window.automate(tab.id);
+});
+
 window.automate = async function(tabId) {
+    let windowId = null;
 
     chrome.tabs.get(tabId, async tab => {
+        windowId = tab.windowId;
         const page = createPageInterface(tabId);
         const host = tab.url.split('/')[2];
         const store = JSON.parse(localStorage.store);
+
+        if (!store.hostData[host] || !store.hostData[host].contexts) {
+            return console.info('Nothing to automate here');
+        }
+
         const contexts = store.hostData[host].contexts;
         const matchedContext = await match(page, contexts);
-        console.info('matched context', matchedContext);
-        await executeContext(page, matchedContext);
+
+        if (matchedContext) {
+            await executeContext(page, matchedContext);
+        } else {
+            console.info('I don\'t know what to do here');
+        }
     });
 
     async function executeContext(page, context) {
-        const selectors = context.selectors.map(s => s.entity.selector);
-        console.info(selectors);
-        const fillableSelectors = await getFillableSelectors(page, selectors);
-        const interactableSelectors = await getInteractableSelectors(page, selectors);
+        // const selectors = context.selectors.map(s => s.entity.selector);
+        const fillableSelectors = await getFillableSelectors(page, context.selectors);
+        const interactableSelectors = await getInteractableSelectors(page, context.selectors);
         await fillDataIn(page, fillableSelectors);
         await interactWith(page, interactableSelectors);
     }
@@ -27,8 +54,7 @@ window.automate = async function(tabId) {
     async function getFillableSelectors(page, selectors) {
         const result = [];
         for (let i = 0; i < selectors.length; i += 1) {
-            const isFillable = await page.callFn(checkFillable, [selectors[i]]);
-            console.info(selectors[i], isFillable);
+            const isFillable = await page.callFn(checkFillable, [selectors[i].entity.selector]);
             if (isFillable) {
                 result.push(selectors[i]);
             }
@@ -39,7 +65,7 @@ window.automate = async function(tabId) {
     async function getInteractableSelectors(page, selectors) {
         const result = [];
         for (let i = 0; i < selectors.length; i += 1) {
-            const isFillable = await page.callFn(checkInteractable, [selectors[i]]);
+            const isFillable = await page.callFn(checkInteractable, [selectors[i].entity.selector]);
             if (isFillable) {
                 result.push(selectors[i]);
             }
@@ -78,51 +104,107 @@ window.automate = async function(tabId) {
     async function fillDataIn(page, selectors) {
         console.info('fill in', selectors);
         for (let i = 0; i < selectors.length; i += 1) {
-            await page.callFn(selector => {
-                const el = document.querySelector(selector);
-                if (el.name.match(/username/)) {
-                    el.value = '';
-                } else if (el.name.match(/password/)) {
+            const { selector } = selectors[i].entity;
+
+            if (selectors[i].isCollection) {
+                const options = await page.callFn(selector => {
+                    const els = document.querySelectorAll(selector);
+                    return [].map.call(els, el => el.innerText.trim());
+                }, [selector]);
+                const value = await requestForInformation(selectors[i].name, options);
+                await page.callFn((selector, value) => {
+                    const els = document.querySelectorAll(selector);
+                    const el = [].find.call(els, el => el.innerText.trim() === value);
+                    el.click();
+                }, [selector, value]);
+            } else {
+                const value = await requestForInformation(selectors[i].name);
+                await page.callFn((selector, value) => {
+                    const el = document.querySelector(selector);
+                    const click = document.createEvent('MouseEvent');
+                    click.initMouseEvent('mousedown', true, true);
+                    el.dispatchEvent(click);
+
                     el.focus();
+
                     const e = document.createEvent('KeyboardEvent');
                     e.initKeyboardEvent('keydown', true, true, null, 'P', 'P');
                     el.dispatchEvent(e);
-                    el.value = '';
+
+                    el.value = value;
+
                     el.blur();
-                }
-            }, [selectors[i]]);
+                }, [selector, value]);
+            }
         }
+    }
+
+    function requestForInformation(name, options) {
+        const data = localStorage.userData ? JSON.parse(localStorage.userData) : {};
+        if (name in data) {
+            return Promise.resolve(data[name]);
+        }
+
+        elm.ports.question.send([name, options || []]);
+        return new Promise((resolve, reject) => {
+            rfi = { resolve, reject };
+        })
+            .then(res => {
+                data[name] = res;
+                localStorage.userData = JSON.stringify(data);
+                return res;
+            });
     }
 
     async function interactWith(page, selectors) {
         console.info('interact with', selectors);
         for (let i = 0; i < selectors.length; i += 1) {
-            await page.callFn(selector => {
-                const el = document.querySelector(selector);
+            const { selector } = selectors[i].entity;
 
-                const e = document.createEvent('MouseEvent');
-                e.initMouseEvent('click', true, true);
-                el.dispatchEvent(e);
-            }, [selectors[i]]);
+            if (selectors[i].isCollection) {
+                const options = await page.callFn(selector => {
+                    const els = document.querySelectorAll(selector);
+                    return [].map.call(els, el => el.innerText.trim());
+                }, [selector]);
+                const value = await requestForInformation(selectors[i].name, options);
+                await page.callFn((selector, value) => {
+                    const els = document.querySelectorAll(selector);
+                    const el = [].find.call(els, el => el.innerText.trim() === value);
+                    el.click();
+                }, [selector, value]);
+            } else {
+                await page.callFn(selector => {
+                    const el = document.querySelector(selector);
+
+                    const e = document.createEvent('MouseEvent');
+                    e.initMouseEvent('click', true, true);
+                    el.dispatchEvent(e);
+                }, [selectors[i].entity.selector]);
+            }
         }
     }
 
     function createPageInterface(tabId) {
         function eval(code) {
             return new Promise((resolve, reject) => {
-                chrome.tabs.executeScript(tabId, { code }, result => {
-                    if (chrome.runtime.lastError) {
-                        return reject(chrome.runtime.lastError);
-                    }
-                    setTimeout(() => resolve(result[0]), 1000);
+                chrome.windows.update(windowId, { focused: true }, () => {
+                    chrome.tabs.executeScript(tabId, { code }, result => {
+                        if (chrome.runtime.lastError) {
+                            return reject(chrome.runtime.lastError);
+                        }
+                        setTimeout(() => resolve(result[0]), 100);
+                    });
                 });
             });
         }
 
         return {
             eval,
-            callFn: (fn, args) =>
-                eval('(' + fn.toString() + ')(' + args.map(x => JSON.stringify(x)).join(',') + ')'),
+            callFn: (fn, args) => {
+                const functionBody = fn.toString();
+                const functionArguments = args.map(x => JSON.stringify(x)).join(',');
+                return eval('(' + functionBody + ')(' + functionArguments + ')');
+            },
         };
     }
 

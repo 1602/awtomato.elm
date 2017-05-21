@@ -32,6 +32,7 @@ type alias Model =
     , flow : List ( ActionType, String )
     , panelVisible : Bool
     , activeSelector : String
+    , isCollection : Bool
     }
 
 
@@ -44,6 +45,7 @@ type Msg
     | Inspect ( String, Int )
     | VisibilityChange Bool
     | SetActive Entity
+    | SetIsCollection Bool
 
 
 main : Program Never Model Msg
@@ -55,7 +57,10 @@ main =
         , subscriptions = subscriptions
         }
 
+
+
 -- PORTS
+
 
 port pageReady : (Maybe String -> msg) -> Sub msg
 
@@ -109,14 +114,28 @@ init =
         []
         False
         ""
+        False
         ! []
+
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        SetIsCollection v ->
+            let
+                updatedModel =
+                    { model | isCollection = v }
+            in
+                case model.entity of
+                    Just e ->
+                        update (LocalStoreMsg <| LocalStore.SaveSelection e True) updatedModel
+
+                    Nothing ->
+                        updatedModel ! []
+
         LocalStoreMsg msg ->
             let
-                (updatedLocalStore, cmd) =
+                ( updatedLocalStore, cmd ) =
                     LocalStore.update msg model.localStore
             in
                 { model | localStore = updatedLocalStore } ! [ updateStore updatedLocalStore ]
@@ -147,10 +166,9 @@ update msg model =
                     }
             in
                 if List.length elements == 1 then
-                    update (LocalStoreMsg <| LocalStore.SaveSelection e) updatedModel
+                    update (LocalStoreMsg <| LocalStore.SaveSelection e False) updatedModel
                 else
                     updatedModel ! []
-
 
         StoreUpdated localStore ->
             { model | localStore = localStore } ! []
@@ -189,17 +207,17 @@ view model =
             [ div
                 [ style [ ( "height", "70vh" ) ]
                 ]
-                [ div
+                [ Html.map LocalStoreMsg <| div
                     [ style
                         [ ( "height", "20px" )
                         , ( "border-bottom", "1px solid #555" )
                         , ( "display", "flex" )
                         ]
                     ]
-                    [ Html.map LocalStoreMsg <| LocalStore.selectContextView model.localStore
+                    [ LocalStore.selectContextView model.localStore
                     , Html.input
                         [ Attributes.value model.localStore.contextName
-                        --, Events.onInput ChangeContextName
+                        , Events.onInput LocalStore.ChangeContextName
                         , Attributes.placeholder "Enter context name, please"
                         , style
                             [ ( "background", "transparent" )
@@ -222,11 +240,32 @@ view model =
                 , makeFlow model
                 ]
             , div
-                [ style [ ( "height", "30vh" ), ( "background", "black" ), ( "box-sizing", "border-box" ), ( "border-top", "10px dotted rgb(36, 36, 36)" ) ]
+                [ style
+                    [ ( "height", "30vh" )
+                    , ( "background", "black" )
+                    , ( "box-sizing", "border-box" )
+                    , ( "border-top", "10px dotted rgb(36, 36, 36)" )
+                    ]
                 ]
                 [ case model.entity of
                     Just e ->
-                        viewEntity e Inspect Highlight
+                        div []
+                            [ viewEntity e Inspect Highlight
+                            , if List.length e.pickedElements > 1 then
+                                Html.label []
+                                    [ Html.input
+                                        [ Attributes.type_ "checkbox"
+                                        , Attributes.checked model.isCollection
+                                        , Events.onCheck SetIsCollection
+                                        ]
+                                        []
+                                    , text "This is collection"
+                                    ]
+                              else
+                                text ""
+                              --, if model.isCollection then
+                              --  else
+                            ]
 
                     Nothing ->
                         text ""
@@ -249,63 +288,65 @@ makeFlow model =
             ]
 
 
+
 {-
-viewFlow : Model -> Html.Html Msg
-viewFlow model =
-    let
-        actionTypes =
-            [ EnterText, Click ]
+   viewFlow : Model -> Html.Html Msg
+   viewFlow model =
+       let
+           actionTypes =
+               [ EnterText, Click ]
 
-        verb =
-            case model.actionType of
-                EnterText ->
-                    "into"
+           verb =
+               case model.actionType of
+                   EnterText ->
+                       "into"
 
-                Click ->
-                    "on"
+                   Click ->
+                       "on"
 
-        subjects =
-            model.localStore.selectors
+           subjects =
+               model.localStore.selectors
 
-           case model.actionType of
-               EnterText ->
-                   model.localStore.selectors
-                       |> Dict.values
-                       |> List.filter (\s -> String.startsWith "INPUT" s.selector)
+              case model.actionType of
+                  EnterText ->
+                      model.localStore.selectors
+                          |> Dict.values
+                          |> List.filter (\s -> String.startsWith "INPUT" s.selector)
 
-               Click ->
-                   model.localStore.selectors
-                       |> Dict.values
-                       |> List.filter (\s -> String.startsWith "INPUT" s.selector |> not)
-        form =
-            Html.form [ Events.onSubmit AddFlowAtom ]
-                --[ Html.button [] [ text "Add an action" ]
-                [ actionTypes
-                    |> List.map (\at -> Html.option [ Attributes.selected (model.actionType == at) ] [ text <| toString at ])
-                    |> Html.select [ Events.onInput SelectActionType ]
-                , text <| " " ++ verb ++ " "
-                , subjects
-                    |> List.map
-                        (\rec ->
-                            Html.option [ Attributes.value rec.entity.selector, Attributes.selected (model.subject == rec.entity.selector) ]
-                                [ text <|
-                                    if rec.name == "" then
-                                        rec.entity.selector
-                                    else
-                                        rec.name
-                                ]
-                        )
-                    |> Html.select [ Events.onInput SelectSubject ]
-                , Html.button [] [ text "Yes, yes, this is my design!" ]
-                ]
-    in
-        div []
-            [ model.flow
-                |> List.map (\( actionType, sel ) -> div [] [ text <| (toString actionType) ++ ": " ++ sel ])
-                |> div []
-            , form
-            ]
+                  Click ->
+                      model.localStore.selectors
+                          |> Dict.values
+                          |> List.filter (\s -> String.startsWith "INPUT" s.selector |> not)
+           form =
+               Html.form [ Events.onSubmit AddFlowAtom ]
+                   --[ Html.button [] [ text "Add an action" ]
+                   [ actionTypes
+                       |> List.map (\at -> Html.option [ Attributes.selected (model.actionType == at) ] [ text <| toString at ])
+                       |> Html.select [ Events.onInput SelectActionType ]
+                   , text <| " " ++ verb ++ " "
+                   , subjects
+                       |> List.map
+                           (\rec ->
+                               Html.option [ Attributes.value rec.entity.selector, Attributes.selected (model.subject == rec.entity.selector) ]
+                                   [ text <|
+                                       if rec.name == "" then
+                                           rec.entity.selector
+                                       else
+                                           rec.name
+                                   ]
+                           )
+                       |> Html.select [ Events.onInput SelectSubject ]
+                   , Html.button [] [ text "Yes, yes, this is my design!" ]
+                   ]
+       in
+           div []
+               [ model.flow
+                   |> List.map (\( actionType, sel ) -> div [] [ text <| (toString actionType) ++ ": " ++ sel ])
+                   |> div []
+               , form
+               ]
 -}
+
 
 viewSelectors : Model -> Html.Html Msg
 viewSelectors model =
@@ -323,25 +364,24 @@ viewSelectors model =
                 (\s ->
                     let
                         --isHighlighted =
-                            --s.entity.selector == (Maybe.withDefault "" model.inspectedElement)
-
+                        --s.entity.selector == (Maybe.withDefault "" model.inspectedElement)
                         isActive =
                             s.entity.selector == model.activeSelector
                     in
                         Html.li
                             [ -- Events.onMouseEnter <| Highlight (Just s.selector, 0)
                               --, Events.onMouseLeave <| Highlight (Just model.activeSelector, 0)
-                               Events.onClick <| SetActive s.entity
-                              , style
+                              Events.onClick <| SetActive s.entity
+                            , style
                                 [ ( "padding", "5px" )
                                 , ( "margin", "5px" )
                                 , ( "background", "#000" )
                                 , ( "max-width", "200px" )
                                 , ( "border"
                                   , if isActive then
-                                      "1px solid #777"
+                                        "1px solid #777"
                                     else
-                                      "1px solid #444"
+                                        "1px solid #444"
                                   )
                                   --, -- , if isHighlighted then
                                   -- "1px solid white"

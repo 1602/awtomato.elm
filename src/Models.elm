@@ -15,6 +15,7 @@ type alias Entity =
 type alias Selector =
     { name : String
     , entity : Entity
+    , isCollection : Bool
     }
 
 
