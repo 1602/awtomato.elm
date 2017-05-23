@@ -1,6 +1,6 @@
 module LocalStore exposing (Model, Msg, Msg(SaveSelection, RemoveSelection, CommitContext, ChangeContextName), update, selectContextView, selectedContext, viewSelection)
 
-import Models exposing (Selector, Context, Entity)
+import Models exposing (Selector, Context, Entity, SelectionFilter)
 import Html exposing (text, div)
 import Html.Events as Events
 import Html.Attributes as Attributes exposing (style)
@@ -16,7 +16,7 @@ type alias Model =
 
 
 type Msg
-    = SaveSelection Entity Bool
+    = SaveSelection Entity Bool SelectionFilter
     | RemoveSelection String
     | ChangeContextName String
     | ChangeSelectionName String String
@@ -30,8 +30,6 @@ update msg model =
         SelectContext s ->
             { model | selectedContext = s, contextName = "" } ! []
 
-
-
         CommitContext ->
             { model
                 | contexts =
@@ -43,23 +41,26 @@ update msg model =
             let
                 updateName selectors =
                     selectors
-                        |> List.map (\s ->
-                            if s.entity.selector == selector then
-                                { s | name = newName }
-                            else
-                                s
-                        )
+                        |> List.map
+                            (\s ->
+                                if s.entity.selector == selector then
+                                    { s | name = newName }
+                                else
+                                    s
+                            )
             in
                 { model
                     | contexts =
                         model.contexts
-                            |> List.map (\ctx ->
-                                if ctx.id == model.selectedContext then
-                                    { ctx | selectors = updateName ctx.selectors }
-                                else
-                                    ctx
-                            )
-                } ! []
+                            |> List.map
+                                (\ctx ->
+                                    if ctx.id == model.selectedContext then
+                                        { ctx | selectors = updateName ctx.selectors }
+                                    else
+                                        ctx
+                                )
+                }
+                    ! []
 
         ChangeContextName s ->
             if model.selectedContext == "" then
@@ -117,7 +118,7 @@ update msg model =
             in
                 updatedLocalStore ! [{- highlight ( Nothing, 0 ), -}]
 
-        SaveSelection e isCollection ->
+        SaveSelection e isCollection selectionFilter ->
             let
                 ctx =
                     selectedContext model
@@ -146,7 +147,7 @@ update msg model =
                     if List.map (\s -> s.entity.selector) selectors |> List.member e.selector then
                         selectors
                     else
-                        selectors ++ [ Selector name e isCollection ]
+                        selectors ++ [ Selector name e isCollection selectionFilter ]
 
                 updatedLocalStore =
                     case ctx of
@@ -206,47 +207,36 @@ selectContextView model =
 
 viewSelection : Selector -> Html.Html Msg
 viewSelection s =
-    div []
+    Html.span []
         [ Html.input
             [ style
                 [ ( "font-size", "12px" )
                 , ( "font-family", "menlo, monospace" )
-                , ( "background", "#000" )
+                , ( "background", "transparent" )
                 , ( "color", "#888" )
                 , ( "border", "0" )
                 , ( "outline", "none" )
-                , ( "width", "calc(100% - 25px)" )
+                , ( "padding", "0" )
+                , ( "margin", "0" )
+                , ( "width", "calc(100% - 40px)" )
                 , ( "text-overflow", "ellipsis" )
                 ]
             , Attributes.value s.name
             , Events.onInput <| ChangeSelectionName s.entity.selector
             ]
             []
-          {-
-             , s.entity.pickedElements
-                 |> List.head
-                 |> Maybe.andThen (\s -> Just (text <| toString s.hasChildren))
-                 |> Maybe.withDefault (text "")
-          -}
-          {-
-             , if isHighlighted then
-                 Html.code [ style [ ( "color", "white" ) ] ] [ text s.selector ]
-               else
-                 Html.code [] [ text s.selector ]
-          -}
-          -- , Html.code [ Events.onClick <| Inspect ( s.entity.selector, 0 ) ] [ text " [i] " ]
         , Html.code
             [ style
                 [ ( "cursor", "pointer" )
                 , ( "display", "inline-block" )
-                , ( "background", "#111" )
+                -- , ( "background", "#111" )
                 , ( "color", "#b21" )
                   --, ( "font-weight", "700" )
-                , ( "font-size", "18px" )
+                , ( "font-size", "16px" )
                 , ( "font-family", "menlo, monospace" )
-                , ( "width", "20px" )
-                , ( "height", "20px" )
-                , ( "line-height", "20px" )
+                , ( "width", "16px" )
+                , ( "height", "16px" )
+                , ( "line-height", "16px" )
                 , ( "border", "1px solid #222" )
                 , ( "text-align", "center" )
                 ]

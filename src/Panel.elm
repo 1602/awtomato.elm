@@ -33,6 +33,7 @@ type alias Model =
     , panelVisible : Bool
     , activeSelector : String
     , isCollection : Bool
+    , selectionFilter : SelectionFilter
     }
 
 
@@ -46,6 +47,7 @@ type Msg
     | VisibilityChange Bool
     | SetActive Entity
     | SetIsCollection Bool
+    | SetSelectionFilter String
 
 
 main : Program Never Model Msg
@@ -115,12 +117,16 @@ init =
         False
         ""
         False
+        ("no filter", "", "")
         ! []
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        SetSelectionFilter f ->
+            { model | selectionFilter = (f, "", "") } ! []
+
         SetIsCollection v ->
             let
                 updatedModel =
@@ -128,7 +134,7 @@ update msg model =
             in
                 case model.entity of
                     Just e ->
-                        update (LocalStoreMsg <| LocalStore.SaveSelection e True) updatedModel
+                        update (LocalStoreMsg <| LocalStore.SaveSelection e True ("no filter", "", "")) updatedModel
 
                     Nothing ->
                         updatedModel ! []
@@ -166,7 +172,7 @@ update msg model =
                     }
             in
                 if List.length elements == 1 then
-                    update (LocalStoreMsg <| LocalStore.SaveSelection e False) updatedModel
+                    update (LocalStoreMsg <| LocalStore.SaveSelection e False ("no filter", "", "")) updatedModel
                 else
                     updatedModel ! []
 
@@ -205,7 +211,7 @@ view model =
     if model.pageReady then
         div [ style [ ( "display", "flex" ), ( "flex-direction", "column" ) ] ]
             [ div
-                [ style [ ( "height", "70vh" ) ]
+                [ style [ ( "height", "50vh" ) ]
                 ]
                 [ Html.map LocalStoreMsg <| div
                     [ style
@@ -241,31 +247,57 @@ view model =
                 ]
             , div
                 [ style
-                    [ ( "height", "30vh" )
+                    [ ( "height", "50vh" )
                     , ( "background", "black" )
                     , ( "box-sizing", "border-box" )
-                    , ( "border-top", "10px dotted rgb(36, 36, 36)" )
+                    , ( "border-top", "1px solid rgb(36, 36, 36)" )
                     ]
                 ]
                 [ case model.entity of
                     Just e ->
-                        div []
-                            [ viewEntity e Inspect Highlight
-                            , if List.length e.pickedElements > 1 then
-                                Html.label []
-                                    [ Html.input
-                                        [ Attributes.type_ "checkbox"
-                                        , Attributes.checked model.isCollection
-                                        , Events.onCheck SetIsCollection
+                        let
+                            (ff, _, _) = model.selectionFilter
+                        in
+                            div []
+                                [ viewEntity e Inspect Highlight
+                                , if List.length e.pickedElements > 1 then
+                                    Html.label []
+                                        [ Html.input
+                                            [ Attributes.type_ "checkbox"
+                                            , Attributes.checked model.isCollection
+                                            , Events.onCheck SetIsCollection
+                                            ]
+                                            []
+                                        , text "This is collection"
                                         ]
-                                        []
-                                    , text "This is collection"
-                                    ]
-                              else
-                                text ""
-                              --, if model.isCollection then
-                              --  else
-                            ]
+                                  else
+                                    text ""
+                                , if List.length e.pickedElements > 1 then
+                                    Html.select
+                                        [ Events.onInput SetSelectionFilter
+                                        ]
+                                        ([ "no filter", "innerText", "attribute", "expression" ]
+                                        |> List.map (\f -> Html.option [ Attributes.selected <| ff == f ] [ text f ])
+                                        )
+                                  else
+                                    text ""
+                                , case ff of
+                                    "innerText" ->
+                                        Html.input [ Events.onInput ConfigureFilterParam1 ] []
+
+                                    "attribute" ->
+                                        span []
+                                            [ Html.input [ Events.onInput ConfigureFilterParam1 ] []
+                                            , Html.input [ Events.onInput ConfigureFilterParam2 ] []
+                                            ]
+                                    "expression" ->
+                                        Html.input [ Events.onInput ConfigureFilterParam1 ] []
+                                        
+                                    _ ->
+                                        text ""
+                                  --, if model.isCollection then
+                                  --  else
+                                ]
 
                     Nothing ->
                         text ""
@@ -275,7 +307,9 @@ view model =
               -- , viewFlow model
             ]
     else
-        text "Waiting for a page to come back online…"
+        div [ style [ ("text-align", "center"), ("width", "100%"), ("padding-top", "20vh"), ("display", "inline-block") ] ] [
+            text "Waiting for a page to come back online…"
+        ]
 
 
 makeFlow : Model -> Html.Html Msg
@@ -371,13 +405,13 @@ viewSelectors model =
                         Html.li
                             [ -- Events.onMouseEnter <| Highlight (Just s.selector, 0)
                               --, Events.onMouseLeave <| Highlight (Just model.activeSelector, 0)
-                              Events.onClick <| SetActive s.entity
-                            , style
+                              style
                                 [ ( "padding", "5px" )
                                 , ( "margin", "5px" )
-                                , ( "background", "#000" )
+                                , ( "vertical-align", "middle" )
+                                -- , ( "background", "#000" )
                                 , ( "max-width", "200px" )
-                                , ( "border"
+                                , ( "border-bottom"
                                   , if isActive then
                                         "1px solid #777"
                                     else
@@ -388,7 +422,13 @@ viewSelectors model =
                                   -- else
                                 ]
                             ]
-                            [ Html.map LocalStoreMsg <| LocalStore.viewSelection s ]
+                            [ Html.code
+                                [ Events.onClick <| SetActive s.entity
+                                , style <|
+                                    ( ("font-size", "12px") ) ::
+                                    (if isActive then [ ] else [ ("filter", "grayscale(100)") ])
+                                ] [ text <| if isActive then "🎯 " else "🎯 " ]
+                            , Html.map LocalStoreMsg <| LocalStore.viewSelection s ]
                 )
             |> Html.ul
                 [ style

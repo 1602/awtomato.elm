@@ -16,8 +16,8 @@ type alias Selector =
     { name : String
     , entity : Entity
     , isCollection : Bool
+    , filter : SelectionFilter
     }
-
 
 type alias Element =
     { x : Int
@@ -32,4 +32,7 @@ type alias Element =
     , label : Maybe String
     , hasChildren : Bool
     }
+
+type alias SelectionFilter =
+    (String, String, String)
 
