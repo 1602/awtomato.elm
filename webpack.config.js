@@ -21,32 +21,36 @@ module.exports = {
     },
 
     resolve: {
-    //modulesDirectories: ['node_modules'],
+        modules: ['node_modules'],
         extensions: ['.js', '.elm'],
     },
 
     module: {
-        loaders: [
-            {
-                test: /\.html$/,
-                exclude: /node_modules/,
-                loader: 'file-loader?name=[name].[ext]',
-            },
-            {
-                test: /\.elm$/,
-                exclude: [/elm-stuff/, /node_modules/],
-                loader: 'elm-hot-loader!elm-webpack-loader?debug=true',
-        // loader: 'elm-hot-loader!elm-webpack-loader'
-            },
-        ],
-
         noParse: /\.elm$/,
+        rules: [{
+            test: /\.elm$/,
+            exclude: [/elm-stuff/, /node_modules/],
+            use: [{
+                loader: 'elm-hot-loader',
+            }, {
+                loader: 'elm-webpack-loader',
+                options: {
+                    verbose: true,
+                    warn: true,
+                    debug: true,
+                    // cache: true,
+                    forceWatch: true,
+                    cwd: path.join(__dirname),
+                },
+            }],
+        }],
     },
 
     plugins: [
         new webpack.DefinePlugin({
             'process.env.NODE_ENV': JSON.stringify(env.NODE_ENV),
         }),
+        // new webpack.optimize.OccurenceOrderPlugin(),
         new HtmlWebpackPlugin({
             template: './static/background.html',
             filename: 'background.html',
@@ -68,7 +72,7 @@ module.exports = {
             chunks: ['sidebar'],
         }),
         new CopyWebpackPlugin([
-      { from: 'src/assets', to: 'assets' },
+          { from: 'src/assets', to: 'assets' },
         ]),
         new WriteFilePlugin(),
 
@@ -79,6 +83,6 @@ module.exports = {
     },
 
     devServer: {
-        stats: 'none',
+        stats: 'info',
     },
 };

@@ -19,6 +19,7 @@ type Msg
     = SaveSelection Entity Bool
     | RemoveSelection String
     | ChangeContextName String
+    | ChangeSelectionName String String
     | CommitContext
     | SelectContext String
 
@@ -29,12 +30,36 @@ update msg model =
         SelectContext s ->
             { model | selectedContext = s, contextName = "" } ! []
 
+
+
         CommitContext ->
             { model
                 | contexts =
                     model.contexts ++ [ Context "" model.contextName model.selectors ]
             }
                 ! []
+
+        ChangeSelectionName selector newName ->
+            let
+                updateName selectors =
+                    selectors
+                        |> List.map (\s ->
+                            if s.entity.selector == selector then
+                                { s | name = newName }
+                            else
+                                s
+                        )
+            in
+                { model
+                    | contexts =
+                        model.contexts
+                            |> List.map (\ctx ->
+                                if ctx.id == model.selectedContext then
+                                    { ctx | selectors = updateName ctx.selectors }
+                                else
+                                    ctx
+                            )
+                } ! []
 
         ChangeContextName s ->
             if model.selectedContext == "" then
@@ -187,13 +212,14 @@ viewSelection s =
                 [ ( "font-size", "12px" )
                 , ( "font-family", "menlo, monospace" )
                 , ( "background", "#000" )
-                , ( "color", "#999" )
+                , ( "color", "#888" )
                 , ( "border", "0" )
                 , ( "outline", "none" )
                 , ( "width", "calc(100% - 25px)" )
                 , ( "text-overflow", "ellipsis" )
                 ]
             , Attributes.value s.name
+            , Events.onInput <| ChangeSelectionName s.entity.selector
             ]
             []
           {-
