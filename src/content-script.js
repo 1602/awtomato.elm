@@ -45,6 +45,7 @@ elm.ports.boundingRectAtPosition.subscribe(({ x, y }) =>
 );
 
 window.getElementsSimilarTo = getElementsSimilarTo;
+window.pickElements = pickElements;
 
 window.highlightElement = node => elm.ports.activeElement.send(makeElement(node));
 
@@ -163,7 +164,7 @@ function queryAll(selector) {
         .filter(x => isVisible(x));
 }
 
-function makeElement(node) {
+function makeElement(node, dataExtractor) {
     if (!node) {
         return null;
     }
@@ -181,8 +182,25 @@ function makeElement(node) {
         width: Math.round(r.width),
         height: Math.round(r.height),
         label: getLabel(node),
+        data: dataExtractor ? extractData(node, dataExtractor) : null,
     };
     return el;
+}
+
+function beginScopedLookup(selector, index) {
+
+}
+
+function pickElements(selector, dataExtractor) {
+    const els = queryAll(selector)
+        .map(el => makeElement(el, dataExtractor));
+    chrome.runtime.sendMessage({ action: 'justElements', payload: els });
+}
+
+function extractData(node, dataExtractor) {
+    const { source } = dataExtractor;
+
+    return node[source] || null;
 }
 
 function getLabel(node) {

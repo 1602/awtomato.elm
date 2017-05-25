@@ -1,5 +1,7 @@
 module Models exposing (..)
 
+--import Json.Encode exposing (Value)
+
 type alias Context =
     { id : String
     , name : String
@@ -10,6 +12,11 @@ type alias Entity =
     { primaryPick : Int
     , pickedElements : List Element
     , selector : String
+    , dataExtractor : Maybe DataExtractor
+    }
+
+type alias DataExtractor =
+    { source : String
     }
 
 type alias Selector =
@@ -31,6 +38,7 @@ type alias Element =
     , elementId : Int
     , label : Maybe String
     , hasChildren : Bool
+    , data : Maybe String
     }
 
 type alias SelectionFilter =

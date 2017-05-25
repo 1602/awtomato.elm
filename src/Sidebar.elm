@@ -123,7 +123,7 @@ update msg model =
             let
                 updatedModel =
                     { model
-                        | entity = Just (Entity 0 elements selector)
+                        | entity = Just (Entity 0 elements selector Nothing)
                     }
             in
                 updatedModel ! []

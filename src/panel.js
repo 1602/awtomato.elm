@@ -125,6 +125,14 @@ backgroundPageConnection.onMessage.addListener(msg => {
 
 window.onShown = () => elm.ports.visibilityChanges.send(true);
 
+elm.ports.lookupWithinScopr.subscribe(([selector, index]) => {
+    chrome.devtools.inspectedWindow.eval('beginScopedLookup(' + JSON.stringify(selector) + ',' + index + ')', { useContentScriptContext: true }, (res, err) => {console.error(err);});
+});
+
+elm.ports.queryElements.subscribe(([selector, dataExtractor]) => {
+    chrome.devtools.inspectedWindow.eval('pickElements(' + JSON.stringify(selector) + ',' + JSON.stringify(dataExtractor) + ')', { useContentScriptContext: true }, (res, err) => {console.error(err);});
+});
+
 elm.ports.highlight.subscribe(([selector, index]) => {
     console.info('highlight', selector, index);
     if (selector) {

@@ -34,8 +34,8 @@ viewEntity entity inspect highlight =
                     (\i el ->
                         Html.li
                             [ onClick <| inspect ( entity.selector, i )
-                            , Events.onMouseOver <| highlight ( Just entity.selector, i )
-                            , Events.onMouseOut <| highlight ( Nothing, 0 )
+                            -- , Events.onMouseOver <| highlight ( Just entity.selector, i )
+                            -- , Events.onMouseOut <| highlight ( Nothing, 0 )
                             , Attributes.class "tag"
                             , style [ ( "padding", "1px" ) ]
                             ]
@@ -50,6 +50,13 @@ viewEntity entity inspect highlight =
                             , text <| toString el.width
                             , text "×"
                             , text <| toString el.height
+                            , text " "
+                            , case el.data of
+                                Just d ->
+                                    Html.code [] [ text d ]
+
+                                Nothing ->
+                                    text ""
                             ]
                     )
                 |> Html.ul [ style [ ( "font-size", "10px" ), ( "padding", "0" ) ] ]

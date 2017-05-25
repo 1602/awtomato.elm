@@ -43,11 +43,16 @@ type Msg
     | PageReady (Maybe String)
     | Highlight ( Maybe String, Int )
     | PickedElements PickingResult
+    | JustElements (List Element)
     | Inspect ( String, Int )
     | VisibilityChange Bool
     | SetActive Entity
-    | SetIsCollection Bool
+    | AddAsCollection
     | SetSelectionFilter String
+    | ConfigureFilterParam String
+    | SetDataExtraction Bool
+    | ChangeDataExtractorSource String
+    | StartChildrenLookup
 
 
 main : Program Never Model Msg
@@ -62,6 +67,9 @@ main =
 
 
 -- PORTS
+
+
+port lookupWithinScope : (String, Int) -> Cmd msg
 
 
 port pageReady : (Maybe String -> msg) -> Sub msg
@@ -88,6 +96,12 @@ port storeUpdated : (LocalStore.Model -> msg) -> Sub msg
 port pickedElements : (PickingResult -> msg) -> Sub msg
 
 
+port justElements : (List Element -> msg) -> Sub msg
+
+
+port queryElements : ( String, Maybe DataExtractor ) -> Cmd msg
+
+
 port visibilityChanges : (Bool -> msg) -> Sub msg
 
 
@@ -97,6 +111,7 @@ subscriptions model =
         [ pageReady PageReady
         , storeUpdated StoreUpdated
         , pickedElements PickedElements
+        , justElements JustElements
         , visibilityChanges VisibilityChange
         ]
 
@@ -117,27 +132,72 @@ init =
         False
         ""
         False
-        ("no filter", "", "")
+        ( "no filter", "", "" )
         ! []
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        SetSelectionFilter f ->
-            { model | selectionFilter = (f, "", "") } ! []
+        StartChildrenLookup ->
+            case model.entity of
+                Just e ->
+                    model ! [ lookupWithinScope (e.selector, 0) ]
 
-        SetIsCollection v ->
+                Nothing ->
+                    model ! []
+
+        ChangeDataExtractorSource s ->
+            case model.entity of
+                Just e ->
+                    let
+                        newEntity =
+                            { e | dataExtractor = Just <| { source = s } }
+                    in
+                        { model | entity = Just newEntity } ! [ queryElements ( e.selector, newEntity.dataExtractor ) ]
+
+                Nothing ->
+                    model ! []
+
+        SetDataExtraction s ->
+            case model.entity of
+                Just e ->
+                    let
+                        newEntity =
+                            if s then
+                                { e | dataExtractor = Just <| { source = "innerText" } }
+                            else
+                                { e | dataExtractor = Nothing }
+                    in
+                        { model | entity = Just newEntity } ! [ queryElements ( e.selector, newEntity.dataExtractor ) ]
+
+                Nothing ->
+                    model ! []
+
+        ConfigureFilterParam s ->
             let
-                updatedModel =
-                    { model | isCollection = v }
+                ( f, _, x ) =
+                    model.selectionFilter
             in
-                case model.entity of
-                    Just e ->
-                        update (LocalStoreMsg <| LocalStore.SaveSelection e True ("no filter", "", "")) updatedModel
+                { model | selectionFilter = ( f, s, x ) } ! []
 
-                    Nothing ->
-                        updatedModel ! []
+        SetSelectionFilter f ->
+            { model | selectionFilter = ( f, "", "" ) } ! []
+
+        AddAsCollection ->
+            case model.entity of
+                Just e ->
+                    let
+                        updatedModel =
+                            { model | activeSelector = e.selector }
+
+                        msg =
+                            LocalStoreMsg <| LocalStore.SaveSelection e True ( "no filter", "", "" )
+                    in
+                        update msg updatedModel
+
+                Nothing ->
+                    model ! []
 
         LocalStoreMsg msg ->
             let
@@ -160,10 +220,18 @@ update msg model =
                         Cmd.none
                   ]
 
+        JustElements elements ->
+            case model.entity of
+                Just e ->
+                    { model | entity = Just <| { e | pickedElements = elements } } ! []
+
+                Nothing ->
+                    model ! []
+
         PickedElements { primaryPick, elements, selector } ->
             let
                 e =
-                    Entity primaryPick elements selector
+                    Entity primaryPick elements selector Nothing
 
                 updatedModel =
                     { model
@@ -172,7 +240,7 @@ update msg model =
                     }
             in
                 if List.length elements == 1 then
-                    update (LocalStoreMsg <| LocalStore.SaveSelection e False ("no filter", "", "")) updatedModel
+                    update (LocalStoreMsg <| LocalStore.SaveSelection e False ( "no filter", "", "" )) updatedModel
                 else
                     updatedModel ! []
 
@@ -213,35 +281,36 @@ view model =
             [ div
                 [ style [ ( "height", "50vh" ) ]
                 ]
-                [ Html.map LocalStoreMsg <| div
-                    [ style
-                        [ ( "height", "20px" )
-                        , ( "border-bottom", "1px solid #555" )
-                        , ( "display", "flex" )
-                        ]
-                    ]
-                    [ LocalStore.selectContextView model.localStore
-                    , Html.input
-                        [ Attributes.value model.localStore.contextName
-                        , Events.onInput LocalStore.ChangeContextName
-                        , Attributes.placeholder "Enter context name, please"
-                        , style
-                            [ ( "background", "transparent" )
-                            , ( "border", "0px solid #bcaaa4" )
-                              --, ( "border-bottom", "1px solid #bcaaa4")
-                            , ( "color", "#999" )
-                            , ( "padding", "5px" )
-                            , ( "margin", "0px" )
-                            , ( "margin-left", "10px" )
-                              --, ( "font-weight", "bold")
-                            , ( "width", "100%" )
-                            , ( "outline", "none" )
-                            , ( "font-family", "menlo, monospace" )
-                            , ( "font-size", "12px" )
+                [ Html.map LocalStoreMsg <|
+                    div
+                        [ style
+                            [ ( "height", "20px" )
+                            , ( "border-bottom", "1px solid #555" )
+                            , ( "display", "flex" )
                             ]
                         ]
-                        []
-                    ]
+                        [ LocalStore.selectContextView model.localStore
+                        , Html.input
+                            [ Attributes.value model.localStore.contextName
+                            , Events.onInput LocalStore.ChangeContextName
+                            , Attributes.placeholder "Enter context name, please"
+                            , style
+                                [ ( "background", "transparent" )
+                                , ( "border", "0px solid #bcaaa4" )
+                                  --, ( "border-bottom", "1px solid #bcaaa4")
+                                , ( "color", "#999" )
+                                , ( "padding", "5px" )
+                                , ( "margin", "0px" )
+                                , ( "margin-left", "10px" )
+                                  --, ( "font-weight", "bold")
+                                , ( "width", "100%" )
+                                , ( "outline", "none" )
+                                , ( "font-family", "menlo, monospace" )
+                                , ( "font-size", "12px" )
+                                ]
+                            ]
+                            []
+                        ]
                 , viewSelectors model
                 , makeFlow model
                 ]
@@ -256,45 +325,67 @@ view model =
                 [ case model.entity of
                     Just e ->
                         let
-                            (ff, _, _) = model.selectionFilter
+                            ( ff, _, _ ) =
+                                model.selectionFilter
                         in
                             div []
                                 [ viewEntity e Inspect Highlight
-                                , if List.length e.pickedElements > 1 then
-                                    Html.label []
-                                        [ Html.input
-                                            [ Attributes.type_ "checkbox"
-                                            , Attributes.checked model.isCollection
-                                            , Events.onCheck SetIsCollection
+                                , div []
+                                    [ if List.length e.pickedElements > 1 && model.activeSelector == "" then
+                                        Html.input
+                                            [ Attributes.type_ "button"
+                                            , Events.onClick AddAsCollection
+                                            , Attributes.value "add as collection"
                                             ]
                                             []
-                                        , text "This is collection"
-                                        ]
-                                  else
-                                    text ""
-                                , if List.length e.pickedElements > 1 then
-                                    Html.select
-                                        [ Events.onInput SetSelectionFilter
-                                        ]
-                                        ([ "no filter", "innerText", "attribute", "expression" ]
-                                        |> List.map (\f -> Html.option [ Attributes.selected <| ff == f ] [ text f ])
-                                        )
-                                  else
-                                    text ""
-                                , case ff of
-                                    "innerText" ->
-                                        Html.input [ Events.onInput ConfigureFilterParam1 ] []
-
-                                    "attribute" ->
-                                        span []
-                                            [ Html.input [ Events.onInput ConfigureFilterParam1 ] []
-                                            , Html.input [ Events.onInput ConfigureFilterParam2 ] []
-                                            ]
-                                    "expression" ->
-                                        Html.input [ Events.onInput ConfigureFilterParam1 ] []
-                                        
-                                    _ ->
+                                      else
                                         text ""
+                                    ]
+                                , div []
+                                    [ Html.label []
+                                        [ Html.input
+                                            [ Attributes.type_ "checkbox"
+                                            , Events.onCheck SetDataExtraction
+                                            , Attributes.checked <| e.dataExtractor /= Nothing
+                                            ]
+                                            []
+                                        , Html.span [] [ text "extract data" ]
+                                        , text " "
+                                        ]
+                                    , case e.dataExtractor of
+                                        Just de ->
+                                            Html.input [ Attributes.value de.source, Events.onInput ChangeDataExtractorSource ] []
+
+                                        Nothing ->
+                                            text ""
+                                    ]
+                                , if e.dataExtractor == Nothing then
+                                    text ""
+                                else
+                                    div []
+                                        [ if List.length e.pickedElements > 1 then
+                                            Html.select
+                                                [ Events.onInput SetSelectionFilter
+                                                ]
+                                                ([ "no filter", "exact match", "expression" ]
+                                                    |> List.map (\f -> Html.option [ Attributes.selected <| ff == f ] [ text f ])
+                                                )
+                                          else
+                                            text ""
+                                        , case ff of
+                                            "no filter" ->
+                                                text ""
+
+                                            "exact match" ->
+                                                e.pickedElements
+                                                    |> List.map .data
+                                                    |> List.map (Maybe.withDefault "")
+                                                    |> List.map (\el -> Html.option [] [ text el ])
+                                                    |> Html.select [ Events.onInput ConfigureFilterParam ]
+
+                                            _ ->
+                                                Html.input [ Events.onInput ConfigureFilterParam ] []
+                                        ]
                                   --, if model.isCollection then
                                   --  else
                                 ]
@@ -307,9 +398,9 @@ view model =
               -- , viewFlow model
             ]
     else
-        div [ style [ ("text-align", "center"), ("width", "100%"), ("padding-top", "20vh"), ("display", "inline-block") ] ] [
-            text "Waiting for a page to come back online…"
-        ]
+        div [ style [ ( "text-align", "center" ), ( "width", "100%" ), ( "padding-top", "20vh" ), ( "display", "inline-block" ) ] ]
+            [ text "Waiting for a page to come back online…"
+            ]
 
 
 makeFlow : Model -> Html.Html Msg
@@ -401,6 +492,18 @@ viewSelectors model =
                         --s.entity.selector == (Maybe.withDefault "" model.inspectedElement)
                         isActive =
                             s.entity.selector == model.activeSelector
+
+                        hasChildren =
+                            s.entity.pickedElements
+                                |> List.head
+                                |> (\s ->
+                                    case s of
+                                        Just el ->
+                                            el.hasChildren
+
+                                        Nothing ->
+                                            False
+                                )
                     in
                         Html.li
                             [ -- Events.onMouseEnter <| Highlight (Just s.selector, 0)
@@ -409,7 +512,7 @@ viewSelectors model =
                                 [ ( "padding", "5px" )
                                 , ( "margin", "5px" )
                                 , ( "vertical-align", "middle" )
-                                -- , ( "background", "#000" )
+                                  -- , ( "background", "#000" )
                                 , ( "max-width", "200px" )
                                 , ( "border-bottom"
                                   , if isActive then
@@ -425,10 +528,25 @@ viewSelectors model =
                             [ Html.code
                                 [ Events.onClick <| SetActive s.entity
                                 , style <|
-                                    ( ("font-size", "12px") ) ::
-                                    (if isActive then [ ] else [ ("filter", "grayscale(100)") ])
-                                ] [ text <| if isActive then "🎯 " else "🎯 " ]
-                            , Html.map LocalStoreMsg <| LocalStore.viewSelection s ]
+                                    (( "font-size", "12px" ))
+                                        :: (if isActive then
+                                                [ ( "color", "red" ) ]
+                                            else
+                                                []
+                                           )
+                                ]
+                                [ text <|
+                                    if s.isCollection then
+                                        "⇶ "
+                                    else
+                                        "→ "
+                                ]
+                            , Html.map LocalStoreMsg <| LocalStore.viewSelection s
+                            , if hasChildren then
+                                span [ Events.onClick StartChildrenLookup ] [ text "↳" ]
+                              else
+                                text ""
+                            ]
                 )
             |> Html.ul
                 [ style
