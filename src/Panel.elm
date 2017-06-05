@@ -5,8 +5,9 @@ import Html exposing (div, span, text)
 import Html.Events as Events exposing (onClick)
 import Html.Attributes as Attributes exposing (style)
 import Models exposing (..)
-import Fragments.Entity exposing (viewEntity)
 import LocalStore
+import Dict
+-- import FontAwesome.Web as Icon
 
 
 type ActionType
@@ -18,12 +19,16 @@ type alias PickingResult =
     { primaryPick : Int
     , elements : List Element
     , selector : String
+    , parentOffset : Int
+    , id : String
     }
 
 
 type alias Model =
-    { localStore : LocalStore.Model
-    , url : String
+    { currentPage : Maybe Page
+    , selections : List Selection
+    , presentElements : Dict.Dict String (List Element)
+    , localStore : LocalStore.Model
     , inspectedElement : Maybe String
     , pageReady : Bool
     , entity : Maybe Entity
@@ -32,27 +37,30 @@ type alias Model =
     , flow : List ( ActionType, String )
     , panelVisible : Bool
     , activeSelector : String
+    , activeSelectionId : Maybe String
+    , activeAttachmentId : Maybe String
     , isCollection : Bool
     , selectionFilter : SelectionFilter
+    , scopedLookup : Maybe String
     }
 
 
 type Msg
-    = StoreUpdated LocalStore.Model
-    | LocalStoreMsg LocalStore.Msg
-    | PageReady (Maybe String)
+    = CurrentPage ( Maybe Page, List (String, List Element) )
     | Highlight ( Maybe String, Int )
     | PickedElements PickingResult
     | JustElements (List Element)
     | Inspect ( String, Int )
     | VisibilityChange Bool
-    | SetActive Entity
-    | AddAsCollection
+    | SetActive ( Maybe String )
     | SetSelectionFilter String
     | ConfigureFilterParam String
     | SetDataExtraction Bool
     | ChangeDataExtractorSource String
-    | StartChildrenLookup
+    | SetLookupMode (Maybe String)
+    | RemoveSelection String
+    | RemoveAttachment String String
+    | SetActiveAttachment (Maybe String, Maybe String)
 
 
 main : Program Never Model Msg
@@ -68,29 +76,46 @@ main =
 
 -- PORTS
 
+port removeSelection : String -> Cmd msg
 
-port lookupWithinScope : (String, Int) -> Cmd msg
+
+port removeAttachment : (String, String) -> Cmd msg
+
+
+port lookupWithinScope : (Maybe String, Int ) -> Cmd msg
 
 
 port pageReady : (Maybe String -> msg) -> Sub msg
 
 
+port currentPage : (( Maybe Models.Page, List (String, List Element) ) -> msg) -> Sub msg
+
+
 port highlight : ( Maybe String, Int ) -> Cmd msg
 
 
-port inspect : ( String, Int ) -> Cmd msg
+port createSelection : ( String, String, String, String ) -> Cmd msg
+
+
+port updateSelection : ( String, String, String ) -> Cmd msg
+
+
+port updateAttachment : ( String, String, String, String, Int ) -> Cmd msg
+
+
+port createAttachment : ( String, String, String, String, Int ) -> Cmd msg
+
+
+port inspect : ( Maybe String, Int ) -> Cmd msg
+
+
+port scopedInspect : ( Maybe String, Int, String, Int ) -> Cmd msg
 
 
 port resetSelection : Bool -> Cmd msg
 
 
-port loadData : String -> Cmd msg
-
-
-port updateStore : LocalStore.Model -> Cmd msg
-
-
-port storeUpdated : (LocalStore.Model -> msg) -> Sub msg
+port getCurrentPage : String -> Cmd msg
 
 
 port pickedElements : (PickingResult -> msg) -> Sub msg
@@ -99,7 +124,7 @@ port pickedElements : (PickingResult -> msg) -> Sub msg
 port justElements : (List Element -> msg) -> Sub msg
 
 
-port queryElements : ( String, Maybe DataExtractor ) -> Cmd msg
+port queryElements : Selector -> Cmd msg
 
 
 port visibilityChanges : (Bool -> msg) -> Sub msg
@@ -108,20 +133,23 @@ port visibilityChanges : (Bool -> msg) -> Sub msg
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ pageReady PageReady
-        , storeUpdated StoreUpdated
-        , pickedElements PickedElements
+        [ pickedElements PickedElements
         , justElements JustElements
         , visibilityChanges VisibilityChange
+        , currentPage CurrentPage
         ]
 
 
 init : ( Model, Cmd Msg )
 init =
     Model
-        (LocalStore.Model [] "" [] "" "")
-        ""
-        -- url
+        -- current page
+        Nothing
+        -- selections
+        []
+        -- presentElements
+        Dict.empty
+        LocalStore.init
         Nothing
         False
         Nothing
@@ -131,21 +159,88 @@ init =
         []
         False
         ""
+        -- activeSelectionId
+        Nothing
+        -- activeAttachmentId
+        Nothing
         False
         ( "no filter", "", "" )
+        (Just "")
         ! []
 
+
+-- getSelection : Model -> Maybe Selector
+-- getSelection model =
+    -- LocalStore.getSelection model.localStore model.activeSelector
+
+
+-- refreshSelectionResult : Model -> Cmd msg
+-- refreshSelectionResult model =
+    -- case getSelection model of
+        -- Just selection ->
+            -- queryElements <| Debug.log "query selection" selection
+--
+        -- Nothing ->
+            -- Cmd.none
+
+getSelector : Maybe String -> Maybe Page -> Maybe String
+getSelector id page =
+    case page of
+        Just p ->
+            p.selections
+                |> List.filter (\s -> Just s.id == id)
+                |> List.head
+                |> Maybe.andThen (\s -> Just s.cssSelector)
+
+        Nothing ->
+            Nothing
+
+getAttachment : Maybe String -> String -> Maybe Page -> (String, Int)
+getAttachment selectionId attachmentId page =
+    case page of
+        Just p ->
+            p.selections
+                |> List.filter (\s -> Just s.id == selectionId)
+                |> List.head
+                |> Maybe.andThen (\s -> s.attachments
+                    |> List.filter (\sa -> sa.id == attachmentId)
+                    |> List.head
+                )
+                |> Maybe.andThen (\sa ->
+                    Just (sa.cssSelector, sa.parentOffset)
+                )
+                |> Maybe.withDefault ("", 0)
+
+        Nothing ->
+            ("", 0)
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        StartChildrenLookup ->
-            case model.entity of
-                Just e ->
-                    model ! [ lookupWithinScope (e.selector, 0) ]
+        RemoveAttachment selId attId ->
+            model ! [ removeAttachment (selId, attId) ]
 
-                Nothing ->
-                    model ! []
+        RemoveSelection id ->
+            model ! [ removeSelection id ]
+
+        CurrentPage ( page, elements ) ->
+            { model
+                | currentPage = page
+                , presentElements = Dict.fromList elements
+                , selections =
+                    case page of
+                        Just p ->
+                            p.selections
+
+                        Nothing ->
+                            []
+            }
+                ! []
+
+        SetLookupMode mode ->
+            { model | scopedLookup = mode } !
+                [ lookupWithinScope ( getSelector mode model.currentPage, 0 )
+                ]
 
         ChangeDataExtractorSource s ->
             case model.entity of
@@ -154,7 +249,7 @@ update msg model =
                         newEntity =
                             { e | dataExtractor = Just <| { source = s } }
                     in
-                        { model | entity = Just newEntity } ! [ queryElements ( e.selector, newEntity.dataExtractor ) ]
+                        { model | entity = Just newEntity } ! [ ]--refreshSelectionResult model ]
 
                 Nothing ->
                     model ! []
@@ -169,7 +264,7 @@ update msg model =
                             else
                                 { e | dataExtractor = Nothing }
                     in
-                        { model | entity = Just newEntity } ! [ queryElements ( e.selector, newEntity.dataExtractor ) ]
+                        { model | entity = Just newEntity } ! [ ] --refreshSelectionResult model ]
 
                 Nothing ->
                     model ! []
@@ -184,38 +279,46 @@ update msg model =
         SetSelectionFilter f ->
             { model | selectionFilter = ( f, "", "" ) } ! []
 
-        AddAsCollection ->
-            case model.entity of
-                Just e ->
-                    let
-                        updatedModel =
-                            { model | activeSelector = e.selector }
 
-                        msg =
-                            LocalStoreMsg <| LocalStore.SaveSelection e True ( "no filter", "", "" )
-                    in
-                        update msg updatedModel
-
-                Nothing ->
-                    model ! []
-
-        LocalStoreMsg msg ->
+        SetActiveAttachment (selectionId, attachmentId) ->
             let
-                ( updatedLocalStore, cmd ) =
-                    LocalStore.update msg model.localStore
-            in
-                { model | localStore = updatedLocalStore } ! [ updateStore updatedLocalStore ]
+                updatedModel =
+                    { model | activeSelectionId = selectionId, activeAttachmentId = attachmentId, scopedLookup = Just "" }
 
-        SetActive e ->
-            if e.selector == model.activeSelector then
-                { model | activeSelector = "", entity = Nothing } ! [ highlight ( Nothing, 0 ) ]
-            else
-                { model | activeSelector = e.selector, entity = Just e } ! [ highlight ( Just e.selector, 0 ) ]
+                selector =
+                    getSelector selectionId model.currentPage
+
+                ( attachmentSelector, parentOffset ) =
+                    case attachmentId of
+                        Just id ->
+                            getAttachment selectionId id model.currentPage
+
+                        Nothing ->
+                            ( "", 0)
+            in
+                if selectionId == Nothing then
+                    updatedModel ! [ highlight ( Nothing, 0 ) ]
+                else
+                    updatedModel !
+                        --[ highlight ( selectionId, 0 ) ] --, refreshSelectionResult updatedModel ]
+                        [ scopedInspect ( selector, 0, attachmentSelector, parentOffset ) ]
+
+        SetActive selectionId ->
+            let
+                updatedModel =
+                    { model | activeSelectionId = selectionId, activeAttachmentId = Nothing, scopedLookup = Just "" }
+            in
+                if selectionId == Nothing then
+                    updatedModel ! [ highlight ( Nothing, 0 ) ]
+                else
+                    updatedModel !
+                        --[ highlight ( selectionId, 0 ) ] --, refreshSelectionResult updatedModel ]
+                        [ inspect ( getSelector selectionId model.currentPage, 0 ) ]
 
         VisibilityChange vis ->
             { model | panelVisible = vis }
-                ! [ if model.url /= "" then
-                        loadData model.url
+                ! [ if model.currentPage /= Nothing then
+                        getCurrentPage ""
                     else
                         Cmd.none
                   ]
@@ -228,34 +331,41 @@ update msg model =
                 Nothing ->
                     model ! []
 
-        PickedElements { primaryPick, elements, selector } ->
+        PickedElements { id, primaryPick, elements, selector, parentOffset } ->
             let
-                e =
-                    Entity primaryPick elements selector Nothing
+                name =
+                    elements
+                        |> List.head
+                        |> Maybe.andThen (\el -> el.label)
+                        |> Maybe.withDefault selector
+
+                pageId =
+                    model.currentPage
+                        |> Maybe.andThen (\page -> Just page.id)
+                        |> Maybe.withDefault ""
 
                 updatedModel =
-                    { model
-                        | entity = Just e
-                        , activeSelector = ""
-                    }
+                    model
             in
-                if List.length elements == 1 then
-                    update (LocalStoreMsg <| LocalStore.SaveSelection e False ( "no filter", "", "" )) updatedModel
-                else
-                    updatedModel ! []
+                case model.scopedLookup of
+                    Nothing ->
+                        model ! []
 
-        StoreUpdated localStore ->
-            { model | localStore = localStore } ! []
+                    Just "" ->
+                        case model.activeSelectionId of
+                            Nothing ->
+                                model ! [ createSelection ( id, name, pageId, selector ) ]
 
-        PageReady url ->
-            { model | pageReady = url /= Nothing, url = Maybe.withDefault "" url }
-                ! [ case url of
-                        Just s ->
-                            loadData s
+                            Just selectionId ->
+                                case model.activeAttachmentId of
+                                    Just  attachmentId ->
+                                        model ! [ updateAttachment ( selectionId, attachmentId, name, selector, parentOffset ) ]
 
-                        Nothing ->
-                            Cmd.none
-                  ]
+                                    Nothing ->
+                                        model ! [ updateSelection ( selectionId, name, selector ) ]
+
+                    Just selectionId ->
+                        model ! [ createAttachment (selectionId, id, name, selector, parentOffset ) ]
 
         Highlight ( selector, index ) ->
             case selector of
@@ -271,146 +381,168 @@ update msg model =
                     { model | inspectedElement = selector } ! [ highlight ( selector, index ) ]
 
         Inspect ( selector, index ) ->
-            { model | panelVisible = False } ! [ inspect ( selector, index ) ]
+            { model | panelVisible = False } ! [ inspect ( Just selector, index ) ]
 
+icon : String -> Html.Html msg
+icon cl =
+    Html.i [ Attributes.class <| "fa fa-" ++ cl ] []
+
+
+btnStyle : String -> Html.Attribute msg
+btnStyle c =
+    style
+        [ ("font-weight", "bold")
+        , ("font-family", "menlo")
+        , ("color", c)
+        , ("background", "#fff" )
+        , ("border", "3px solid #777")
+        , ("border-radius", "2px")
+        , ("padding", "3px")
+        , ("padding-left", "4px")
+        , ("padding-right", "4px")
+        ]
+
+stopit : String -> msg -> Html.Html msg
+stopit color clicked =
+    Html.button
+        [ Events.onClick clicked
+        , btnStyle color
+        ]
+        [ Html.img [ Attributes.src "assets/stopit.png", Attributes.width 20 ] []
+        , text " stop it"
+        ]
+
+icoBtn : String -> String -> msg -> Html.Html msg
+icoBtn color ico clicked =
+    Html.button
+        [ btnStyle color
+        , onClick clicked
+        ]
+        [ icon ico ]
 
 view : Model -> Html.Html Msg
 view model =
-    if model.pageReady then
-        div [ style [ ( "display", "flex" ), ( "flex-direction", "column" ) ] ]
-            [ div
-                [ style [ ( "height", "50vh" ) ]
-                ]
-                [ Html.map LocalStoreMsg <|
-                    div
-                        [ style
-                            [ ( "height", "20px" )
-                            , ( "border-bottom", "1px solid #555" )
-                            , ( "display", "flex" )
-                            ]
-                        ]
-                        [ LocalStore.selectContextView model.localStore
-                        , Html.input
-                            [ Attributes.value model.localStore.contextName
-                            , Events.onInput LocalStore.ChangeContextName
-                            , Attributes.placeholder "Enter context name, please"
-                            , style
-                                [ ( "background", "transparent" )
-                                , ( "border", "0px solid #bcaaa4" )
-                                  --, ( "border-bottom", "1px solid #bcaaa4")
-                                , ( "color", "#999" )
-                                , ( "padding", "5px" )
-                                , ( "margin", "0px" )
-                                , ( "margin-left", "10px" )
-                                  --, ( "font-weight", "bold")
-                                , ( "width", "100%" )
-                                , ( "outline", "none" )
-                                , ( "font-family", "menlo, monospace" )
-                                , ( "font-size", "12px" )
+    case model.currentPage of
+        Just page ->
+            div [ style [ ( "display", "flex" ), ( "flex-direction", "column" ) ] ]
+                --[ Html.div [] [ icon "paragraph", text <| " " ++ page.name ]
+                [ model.selections
+                    |> List.map (\s ->
+                        let
+                            isPresent id = Dict.member id model.presentElements
+
+                            size id =
+                                case Dict.get id model.presentElements of
+                                    Just list ->
+                                        List.length list
+
+                                    Nothing -> 0
+
+                            selectionIcon id =
+                                span [ style
+                                    [ ("border", "1px solid #000")
+                                    , ("display", "inline-block")
+                                    , ("width", "20px")
+                                    , ("height", "20px")
+                                    , ("text-align", "center")
+                                    , ("background", "#111")
+                                    ]] [
+                                        if size id == 0 then
+                                            text "∅"
+                                        else if size id > 1 then
+                                            icon "angle-double-right"
+                                        else
+                                            icon "angle-right"
+                                    ]
+                        in
+                            Html.li [ style [("padding", "5px")], Attributes.class "selection" ]
+                                [ selectionIcon s.id
+                                , text " "
+                                , span [ Attributes.class "text-label" ] [ text s.name ]
+                                , text " "
+                                , if model.scopedLookup == (Just s.id) then
+                                span [ style [ ("color", "orange" ), ("font-family", "menlo") ] ]
+                                    [ icon "paperclip"
+                                    , text " attaching "
+                                    , stopit "red" <| SetLookupMode Nothing
+                                    ]
+                                else if isPresent s.id then
+                                    icoBtn "orange" "paperclip" <| SetLookupMode (Just s.id)
+                                else
+                                    text ""
+                                , text " "
+                                , if model.activeSelectionId == (Just s.id) && model.activeAttachmentId == Nothing then
+                                    span [ style [ ("color", "orange" ), ("font-family", "menlo") ] ]
+                                        [ text " adjusting css selector "
+                                        , stopit "green" <| SetActive Nothing
+                                        ]
+                                  else
+                                    icoBtn "royalblue" "wrench" <| SetActive (Just s.id)
+                                , text " "
+                                , icoBtn "red" "trash" <| RemoveSelection s.id
+                                , if model.activeSelectionId == (Just s.id) then
+                                    div [] [ text <| "×" ++ (toString <| size s.id) ]
+                                  else
+                                    text ""
+                                , if List.isEmpty s.attachments then
+                                    text ""
+                                  else
+                                    s.attachments
+                                        |> List.map (\sa -> Html.li [ Attributes.class "attachment" ]
+                                            [ selectionIcon sa.id
+                                            , text " "
+                                            , span [ Attributes.class "text-label" ] [ text sa.cssSelector ]
+                                            , text " "
+                                            , if model.activeAttachmentId == (Just sa.id) then
+                                                span [ style [ ("color", "yellow" ), ("font-family", "menlo") ] ]
+                                                    [ text " adjusting css selector "
+                                                    , stopit "red"
+                                                        <| SetActiveAttachment (Nothing, Nothing)
+                                                    ]
+                                              else
+                                                icoBtn "royalblue" "wrench"
+                                                    <| SetActiveAttachment (Just s.id, Just sa.id)
+                                            , text " "
+                                            , icoBtn "green" "trash" <| RemoveAttachment s.id sa.id
+                                            , if model.activeAttachmentId == (Just sa.id) then
+                                                div [] [ text <| "×" ++ (toString <| size sa.id) ]
+                                              else
+                                                text ""
+                                            ])
+                                        |> Html.ul [style [("padding-left", "20px") ]]
                                 ]
+                        )
+
+                    |> Html.ul [style [("padding-left", "10px") ]]
+                , div [ style [("padding", "5px") ]]
+                    [ if model.scopedLookup == Nothing then
+                        Html.button
+                            [ Events.onClick <| SetLookupMode (Just "")
+                            , btnStyle "#444"
                             ]
-                            []
-                        ]
-                , viewSelectors model
-                , makeFlow model
-                ]
-            , div
-                [ style
-                    [ ( "height", "50vh" )
-                    , ( "background", "black" )
-                    , ( "box-sizing", "border-box" )
-                    , ( "border-top", "1px solid rgb(36, 36, 36)" )
+                            [ icon "crosshairs", text " pick new element from the page "
+                            ]
+                    else
+                        case model.scopedLookup of
+                            Just "" ->
+                                div [ style [ ("color", "orange" ), ("font-family", "menlo") ] ]
+                                    [ icon "crosshairs"
+                                    , text " lookup is active "
+                                    , stopit "red" <| SetLookupMode Nothing
+                                    ]
+
+                            _ ->
+                                text ""
+
                     ]
                 ]
-                [ case model.entity of
-                    Just e ->
-                        let
-                            ( ff, _, _ ) =
-                                model.selectionFilter
-                        in
-                            div []
-                                [ viewEntity e Inspect Highlight
-                                , div []
-                                    [ if List.length e.pickedElements > 1 && model.activeSelector == "" then
-                                        Html.input
-                                            [ Attributes.type_ "button"
-                                            , Events.onClick AddAsCollection
-                                            , Attributes.value "add as collection"
-                                            ]
-                                            []
-                                      else
-                                        text ""
-                                    ]
-                                , div []
-                                    [ Html.label []
-                                        [ Html.input
-                                            [ Attributes.type_ "checkbox"
-                                            , Events.onCheck SetDataExtraction
-                                            , Attributes.checked <| e.dataExtractor /= Nothing
-                                            ]
-                                            []
-                                        , Html.span [] [ text "extract data" ]
-                                        , text " "
-                                        ]
-                                    , case e.dataExtractor of
-                                        Just de ->
-                                            Html.input [ Attributes.value de.source, Events.onInput ChangeDataExtractorSource ] []
 
-                                        Nothing ->
-                                            text ""
-                                    ]
-                                , if e.dataExtractor == Nothing then
-                                    text ""
-                                else
-                                    div []
-                                        [ if List.length e.pickedElements > 1 then
-                                            Html.select
-                                                [ Events.onInput SetSelectionFilter
-                                                ]
-                                                ([ "no filter", "exact match", "expression" ]
-                                                    |> List.map (\f -> Html.option [ Attributes.selected <| ff == f ] [ text f ])
-                                                )
-                                          else
-                                            text ""
-                                        , case ff of
-                                            "no filter" ->
-                                                text ""
-
-                                            "exact match" ->
-                                                e.pickedElements
-                                                    |> List.map .data
-                                                    |> List.map (Maybe.withDefault "")
-                                                    |> List.map (\el -> Html.option [] [ text el ])
-                                                    |> Html.select [ Events.onInput ConfigureFilterParam ]
-
-                                            _ ->
-                                                Html.input [ Events.onInput ConfigureFilterParam ] []
-                                        ]
-                                  --, if model.isCollection then
-                                  --  else
-                                ]
-
-                    Nothing ->
-                        text ""
+        Nothing ->
+            div [ style [ ( "text-align", "center" ), ( "width", "100%" ), ( "padding-top", "20vh" ), ( "display", "inline-block" ) ] ]
+                [ Html.i [ style [ ("font-size", "14px" ) ], Attributes.class "fa fa-spinner fa-pulse fa-3x fa-fw" ] []
+                , Html.br [] []
+                , text " Waiting for a page to come back online…"
                 ]
-              -- , Html.span [ style [("font-size", "16px")] ] [ text model.activeSelector ]
-              -- , text "2. Describe a flow..."
-              -- , viewFlow model
-            ]
-    else
-        div [ style [ ( "text-align", "center" ), ( "width", "100%" ), ( "padding-top", "20vh" ), ( "display", "inline-block" ) ] ]
-            [ text "Waiting for a page to come back online…"
-            ]
-
-
-makeFlow : Model -> Html.Html Msg
-makeFlow model =
-    if List.isEmpty model.localStore.selectors then
-        text ""
-    else
-        div [ style [ ( "padding", "5px" ) ] ]
-            [ Html.map LocalStoreMsg <| Html.button [ onClick LocalStore.CommitContext ] [ text "Create new context" ]
-            ]
 
 
 
@@ -497,13 +629,13 @@ viewSelectors model =
                             s.entity.pickedElements
                                 |> List.head
                                 |> (\s ->
-                                    case s of
-                                        Just el ->
-                                            el.hasChildren
+                                        case s of
+                                            Just el ->
+                                                el.hasChildren
 
-                                        Nothing ->
-                                            False
-                                )
+                                            Nothing ->
+                                                False
+                                   )
                     in
                         Html.li
                             [ -- Events.onMouseEnter <| Highlight (Just s.selector, 0)
@@ -526,8 +658,7 @@ viewSelectors model =
                                 ]
                             ]
                             [ Html.code
-                                [ Events.onClick <| SetActive s.entity
-                                , style <|
+                                [ style <|
                                     (( "font-size", "12px" ))
                                         :: (if isActive then
                                                 [ ( "color", "red" ) ]
@@ -541,11 +672,6 @@ viewSelectors model =
                                     else
                                         "→ "
                                 ]
-                            , Html.map LocalStoreMsg <| LocalStore.viewSelection s
-                            , if hasChildren then
-                                span [ Events.onClick StartChildrenLookup ] [ text "↳" ]
-                              else
-                                text ""
                             ]
                 )
             |> Html.ul

@@ -57,6 +57,14 @@ viewEntity entity inspect highlight =
 
                                 Nothing ->
                                     text ""
+                            , el.properties
+                                |> List.map (\prop -> Html.li []
+                                  --[ text prop.name
+                                  --, text " = "
+                                  [ text <| toString prop.data
+                                  ]
+                                )
+                                |> Html.ul []
                             ]
                     )
                 |> Html.ul [ style [ ( "font-size", "10px" ), ( "padding", "0" ) ] ]

@@ -2,9 +2,10 @@
 
 const Elm = require('./Sidebar.elm');
 const elm = Elm.Sidebar.fullscreen();
+const extensionId = chrome.runtime.id;
 
 // Create a connection to the background page
-let backgroundPageConnection = chrome.runtime.connect({
+let backgroundPageConnection = chrome.runtime.connect(extensionId, {
     name: 'sidebar',
 });
 
@@ -31,7 +32,7 @@ backgroundPageConnection.onDisconnect.addListener(() => {
     console.info('sidebar: background page disconnected');
     setTimeout(() => {
         console.info('attempt to reconnect');
-        backgroundPageConnection = chrome.runtime.connect({ name: 'sidebar' });
+        backgroundPageConnection = chrome.runtime.connect(extensionId, { name: 'sidebar' });
     }, 1000);
 });
 

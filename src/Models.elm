@@ -8,10 +8,35 @@ type alias Context =
     , selectors : List Selector
     }
 
+
+type alias Page =
+    { id : String
+    , name : String
+    , selections : List Selection
+    }
+
+
+type alias Selection =
+    { id : String
+    , name : String
+    , cssSelector : String
+    , attachments : List Attachment
+    }
+
+
+type alias Attachment =
+    { id : String
+    , name : String
+    , cssSelector : String
+    , parentOffset : Int
+    }
+
+
 type alias Entity =
     { primaryPick : Int
     , pickedElements : List Element
     , selector : String
+    , parentOffset : Int
     , dataExtractor : Maybe DataExtractor
     }
 
@@ -20,6 +45,14 @@ type alias DataExtractor =
     }
 
 type alias Selector =
+    { name : String
+    , entity : Entity
+    , isCollection : Bool
+    , filter : SelectionFilter
+    , properties : List Property
+    }
+
+type alias Property =
     { name : String
     , entity : Entity
     , isCollection : Bool
@@ -35,10 +68,20 @@ type alias Element =
     , id : Maybe String
     , tagName : String
     , classList : List String
-    , elementId : Int
+    , elementId : String
     , label : Maybe String
     , hasChildren : Bool
     , data : Maybe String
+    , properties : List ChildElement
+    }
+
+type alias ChildElement =
+    { id : Maybe String
+    , tagName : String
+    , classList : List String
+    , label : Maybe String
+    , data : Maybe String
+    , name : String
     }
 
 type alias SelectionFilter =

@@ -12,6 +12,7 @@ module.exports = {
         sidebar: './src/sidebar.js',
         background: './src/background.js',
         devtools: './src/devtools.js',
+        playground: './src/playground.js',
     },
 
     output: {
@@ -60,6 +61,11 @@ module.exports = {
             template: './static/devtools.html',
             filename: 'automation-devtools.html',
             chunks: ['devtools'],
+        }),
+        new HtmlWebpackPlugin({
+            template: './static/playground.html',
+            filename: 'playground.html',
+            chunks: ['playground'],
         }),
         new HtmlWebpackPlugin({
             template: './static/panel.html',

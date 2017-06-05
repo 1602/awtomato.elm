@@ -5,3 +5,26 @@ body { color: #eee; padding: 0; margin: 0; background: #222; }
 .tag:hover .tag-name { color: #444; }
 .tag:hover .inner-text { color: black; }
 .inner-text { color: #ddd; }
+
+.fa-ul>li .fa-li {top: 1.2em}
+
+li.selection > button { filter: opacity(30%) grayscale(50%); transition: filter .2s }
+li.selection:hover > button { filter: opacity(100%) grayscale(0%); }
+
+li.attachment, li.selection {
+  line-height: 20px;
+  list-style: none;
+}
+
+li.attachment > button { filter: opacity(30%) grayscale(50%); transition: filter .2s }
+li.attachment:hover > button { filter: opacity(100%) grayscale(0%); }
+li.attachment:hover > .text-label, li.selection:hover > .text-label {
+  /* background: #111; */
+}
+
+
+li.attachment > .text-label, li.selection > .text-label {
+  min-width: 200px;
+  display: inline-block;
+  padding: 5px;
+}

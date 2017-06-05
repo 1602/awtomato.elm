@@ -1,12 +1,12 @@
-chrome.devtools.panels.elements.createSidebarPane('Selector', sidebarReady);
-chrome.devtools.panels.create('My Automation', '', 'panel.html', panelReady);
+chrome.devtools.panels.elements.createSidebarPane('Selection', sidebarReady);
+// chrome.devtools.panels.create('Automation', '', 'panel.html', panelReady);
 
 const components = {};
 
 function sidebarReady(sidebar) {
     components.sidebar = sidebar;
 
-    sidebar.setPage('sidebar.html');
+    sidebar.setPage('panel.html');
 
     let win = null;
 

@@ -1,6 +1,6 @@
-module LocalStore exposing (Model, Msg, Msg(SaveSelection, RemoveSelection, CommitContext, ChangeContextName), update, selectContextView, selectedContext, viewSelection)
+module LocalStore exposing (Model, init, Msg, Msg(SaveSelection, RemoveSelection, ChangeContextName), update, selectContextView, selectedContext, viewSelection, getSelection)
 
-import Models exposing (Selector, Context, Entity, SelectionFilter)
+import Models exposing (Selector, Context, Entity, SelectionFilter, Property)
 import Html exposing (text, div)
 import Html.Events as Events
 import Html.Attributes as Attributes exposing (style)
@@ -16,26 +16,38 @@ type alias Model =
 
 
 type Msg
-    = SaveSelection Entity Bool SelectionFilter
+    = SaveSelection Entity Bool SelectionFilter String
     | RemoveSelection String
     | ChangeContextName String
     | ChangeSelectionName String String
-    | CommitContext
     | SelectContext String
 
+init : Model
+init =
+    Model [] "" [] "" ""
+
+selectedContext : Model -> Maybe Context
+selectedContext model =
+    model.contexts
+        |> List.filter (\a -> a.id == model.selectedContext)
+        |> List.head
+
+
+getSelection : Model -> String -> Maybe Selector
+getSelection model selector =
+    selectedContext model
+        |> Maybe.andThen (\ctx -> 
+            ctx.selectors
+                |> List.filter (\s -> s.entity.selector == selector)
+                |> List.head
+        )
+        |> Debug.log ("get selection by selector" ++ selector)
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         SelectContext s ->
             { model | selectedContext = s, contextName = "" } ! []
-
-        CommitContext ->
-            { model
-                | contexts =
-                    model.contexts ++ [ Context "" model.contextName model.selectors ]
-            }
-                ! []
 
         ChangeSelectionName selector newName ->
             let
@@ -118,7 +130,7 @@ update msg model =
             in
                 updatedLocalStore ! [{- highlight ( Nothing, 0 ), -}]
 
-        SaveSelection e isCollection selectionFilter ->
+        SaveSelection e isCollection selectionFilter scope ->
             let
                 ctx =
                     selectedContext model
@@ -144,10 +156,22 @@ update msg model =
                            )
 
                 updatedSelectors =
-                    if List.map (\s -> s.entity.selector) selectors |> List.member e.selector then
+                    if scope /= "" then
+                        selectors
+                            |> List.map
+                                (\s ->
+                                    if s.entity.selector == scope then
+                                        { s
+                                            | properties =
+                                                s.properties ++ [ Property name e isCollection selectionFilter ]
+                                        }
+                                    else
+                                        s
+                                )
+                    else if List.map (\s -> s.entity.selector) selectors |> List.member e.selector then
                         selectors
                     else
-                        selectors ++ [ Selector name e isCollection selectionFilter ]
+                        selectors ++ [ Selector name e isCollection selectionFilter [] ]
 
                 updatedLocalStore =
                     case ctx of
@@ -174,13 +198,6 @@ update msg model =
 
 --, entity = Nothing
 --, activeSelector = selector
-
-
-selectedContext : Model -> Maybe Context
-selectedContext model =
-    model.contexts
-        |> List.filter (\a -> a.id == model.selectedContext)
-        |> List.head
 
 
 selectContextView : Model -> Html.Html Msg
@@ -229,7 +246,7 @@ viewSelection s =
             [ style
                 [ ( "cursor", "pointer" )
                 , ( "display", "inline-block" )
-                -- , ( "background", "#111" )
+                  -- , ( "background", "#111" )
                 , ( "color", "#b21" )
                   --, ( "font-weight", "700" )
                 , ( "font-size", "16px" )
@@ -243,4 +260,10 @@ viewSelection s =
             , Events.onClick <| RemoveSelection s.entity.selector
             ]
             [ text " × " ]
+        , if List.isEmpty s.properties then
+            text ""
+          else
+            s.properties
+                |> List.map (\p -> Html.option [] [ text p.name ])
+                |> Html.ul []
         ]

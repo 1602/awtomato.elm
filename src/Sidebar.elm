@@ -15,6 +15,7 @@ type ActionType = EnterText | Click
 type alias PickingResult =
     { selector : String
     , elements : List Element
+    , parentOffset : Int
     }
 
 
@@ -119,11 +120,11 @@ update msg model =
         VisibilityChange vis ->
             { model | panelVisible = Debug.log "panel visibility" vis } ! []
 
-        PickedElements { selector, elements } ->
+        PickedElements { selector, elements, parentOffset } ->
             let
                 updatedModel =
                     { model
-                        | entity = Just (Entity 0 elements selector Nothing)
+                        | entity = Just (Entity 0 elements selector parentOffset Nothing)
                     }
             in
                 updatedModel ! []
