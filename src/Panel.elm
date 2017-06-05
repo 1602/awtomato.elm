@@ -7,7 +7,6 @@ import Html.Attributes as Attributes exposing (style)
 import Models exposing (..)
 import LocalStore
 import Dict
--- import FontAwesome.Web as Icon
 
 
 type ActionType
@@ -458,7 +457,7 @@ view model =
                             Html.li [ style [("padding", "5px")], Attributes.class "selection" ]
                                 [ selectionIcon s.id
                                 , text " "
-                                , span [ Attributes.class "text-label" ] [ text s.name ]
+                                , span [ Attributes.class "text-label" ] [ text s.cssSelector ]
                                 , text " "
                                 , if model.scopedLookup == (Just s.id) then
                                 span [ style [ ("color", "orange" ), ("font-family", "menlo") ] ]
