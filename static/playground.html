@@ -1,8 +1,14 @@
 <!DOCTYPE html>
 <html>
     <head>
+<style>
+.with-before::before {
+    content: attr(data-bummer) ' - and hello from css';
+}
+</style>
     </head>
     <body>
         <script src="playground.js"></script>
+        <div class="with-before" data-bummer="- hello from dom"> - oh dear</div>
     </body>
 </html>

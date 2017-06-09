@@ -2,66 +2,39 @@
 
 /* global $0, inspect */
 
+const { makeApp } = require('./elm-utils.js');
 const db = require('./db.js');
-const models = require('./models.js');
-const Elm = require('./Panel.elm');
-const elm = Elm.Panel.fullscreen();
+const models = require('./models.js')(db);
+const panelView = makeApp(require('./Panel.elm'));
 const extensionId = chrome.runtime.id;
+const { analysePage } = require('./page-analyser.js');
+const { evalFn } = require('./inspected-window.js');
+const { matchCurrentPage } = require('./page.js')(models);
 
 window.db = db;
 
-db.connect();
+db.migrate();
 
-window.models = models(db);
+window.models = models;
 
 // Create a connection to the background page
-let backgroundPageConnection = chrome.runtime.connect(extensionId, {
+const backgroundPageConnection = chrome.runtime.connect(extensionId, {
     name: 'panel',
 });
 
 chrome.devtools.panels.elements.onSelectionChanged.addListener(async () => {
-    const payload = await callFn(() => {
-        console.log('hahaha', $0);
+    const payload = await evalFn(() => {
         return window.getElementsSimilarTo($0, []);
     });
-    console.log('hohoho', payload);
-    elm.ports.pickedElements.send(payload);
+    panelView.send('pickedElements', payload);
 });
-
-function getExpressions(...exprs) {
-    return new Promise((resolve, reject) => {
-        chrome.devtools.inspectedWindow.eval('[' + exprs.join(',') + ']', { useContentScriptContext: true }, (result, err) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(result);
-            }
-        });
-    });
-}
-
-function subscribe(portName, handler) {
-    elm.ports[portName].subscribe(async function() {
-        try {
-            handler.apply(null, arguments);
-        } catch (e) {
-            console.error('Error in subscription to ' + portName, e);
-        }
-    });
-}
 
 backgroundPageConnection.postMessage({
     name: 'init',
     tabId: chrome.devtools.inspectedWindow.tabId,
 });
 
-backgroundPageConnection.onDisconnect.addListener(() => {
-    console.info('panel: background page disconnected');
-    setTimeout(() => {
-        location.reload();
-        backgroundPageConnection = chrome.runtime.connect(extensionId, { name: 'panel' });
-    }, 1000);
-});
+backgroundPageConnection.onDisconnect.addListener(() => setTimeout(() => location.reload(), 1000));
 
 backgroundPageConnection.onMessage.addListener(msg => {
     const { action, payload } = msg;
@@ -70,16 +43,20 @@ backgroundPageConnection.onMessage.addListener(msg => {
         if (payload) {
             getCurrentPage();
         } else {
-            elm.ports.currentPage.send([null, []]);
+            panelView.send('currentPage', [null, []]);
         }
     } else {
-        elm.ports[action].send(payload);
+        panelView.send(action, payload);
     }
 });
 
-window.onShown = () => elm.ports.visibilityChanges.send(true);
+window.onShown = () => panelView.send('visibilityChanges', true);
 
-elm.ports.lookupWithinScope.subscribe(([selector, index = 0]) => {
+
+panelView.subscribe('analysePage', async () => console.info(await evalFn(analysePage)));
+
+
+panelView.subscribe('lookupWithinScope', ([selector, index = 0]) => {
     if (!selector) {
         chrome.devtools.inspectedWindow.eval('window.setScopedLookup("");',
             { useContentScriptContext: true },
@@ -92,11 +69,13 @@ elm.ports.lookupWithinScope.subscribe(([selector, index = 0]) => {
     }
 });
 
-elm.ports.queryElements.subscribe(selection => {
+
+panelView.subscribe('queryElements', selection => {
     chrome.devtools.inspectedWindow.eval('pickElements(' + JSON.stringify(selection) + ')', { useContentScriptContext: true }, (res, err) => { if (err) {console.error(err);}});
 });
 
-elm.ports.highlight.subscribe(([selector, index]) => {
+
+panelView.subscribe('highlight', ([selector, index]) => {
     console.info('highlight', selector, index);
     if (selector) {
         chrome.devtools.inspectedWindow.eval('(function(aa, index) { const a = [].filter.call(aa, n => n.offsetWidth > 0); if (a.length > 0) { a[index].scrollIntoViewIfNeeded(); resetSelection(); highlightElement(a[index]); } else { console.log("nothing to highlight"); } })($$(' + JSON.stringify(selector) + '), ' + index + ')', { useContentScriptContext: true },
@@ -106,44 +85,47 @@ elm.ports.highlight.subscribe(([selector, index]) => {
     }
 });
 
-elm.ports.resetSelection.subscribe(() => {
+panelView.subscribe('resetSelection', () => {
     chrome.devtools.inspectedWindow.eval('resetSelection()', { useContentScriptContext: true });
 });
 
-subscribe('inspect', ([selector, index]) => {
+panelView.subscribe('saveHtml', async () => {
+    const [page] = await matchCurrentPage();
+    const [html, url] = await evalFn(() => [document.documentElement.outerHTML, location.href], []);
+    window.models.saveHtml(page.id, html, url);
+});
+
+panelView.subscribe('inspect', ([selector, index]) => {
     console.info('inspecting', selector, index);
     chrome.devtools.inspectedWindow.eval('(function(aa, index) { const a = [].filter.call(aa, n => n.offsetWidth > 0); if (a.length > 0) { a[index].scrollIntoViewIfNeeded(); inspect(a[index]); } else { console.log("nothing really"); } })($$(' + JSON.stringify(selector) + '), ' + index + ')');
 });
 
-subscribe('scopedInspect', args => {
-    console.info('inspecting', args);
-    callFn((anchor, index, selector, parentOffset) => {
+panelView.subscribe('scopedInspect', args => {
+    evalFn((anchor, index, selector, parentOffset) => {
         const scope = window.setScopedLookup(anchor, index, parentOffset);
         const el = window.queryAll(selector, scope)[0];
         if (el) {
             inspect(el);
-        } else {
-            console.info('nothing really (scopedInspect)');
         }
     }, args);
 });
 
-subscribe('createSelection', async ([selectionId, name, pageId, selector]) => {
+panelView.subscribe('createSelection', async ([selectionId, name, pageId, selector]) => {
     await window.models.createSelection(selectionId, name, pageId, selector);
     await getCurrentPage();
 });
 
-subscribe('updateSelection', async ([selectionId, name, cssSelector]) => {
+panelView.subscribe('updateSelection', async ([selectionId, name, cssSelector]) => {
     window.models.updateSelection(selectionId, name, { cssSelector });
     await getCurrentPage();
 });
 
-subscribe('updateAttachment', async ([selectionId, attachmentId, name, cssSelector, parentOffset]) => {
+panelView.subscribe('updateAttachment', async ([selectionId, attachmentId, name, cssSelector, parentOffset]) => {
     window.models.updateAttachment(selectionId, attachmentId, { name, cssSelector, parentOffset });
     await getCurrentPage();
 });
 
-subscribe('createAttachment', async ([selectionId, attachmentId, name, cssSelector, parentOffset]) => {
+panelView.subscribe('createAttachment', async ([selectionId, attachmentId, name, cssSelector, parentOffset]) => {
     const selection = await window.models.getSelection(selectionId);
 
     if (selection) {
@@ -152,130 +134,19 @@ subscribe('createAttachment', async ([selectionId, attachmentId, name, cssSelect
     }
 });
 
-subscribe('removeSelection', async selectionId => {
+panelView.subscribe('removeSelection', async selectionId => {
     await window.models.removeSelection(selectionId);
     await getCurrentPage();
 });
 
-subscribe('removeAttachment', async ([selectionId, attachmentId]) => {
+panelView.subscribe('removeAttachment', async ([selectionId, attachmentId]) => {
     await window.models.removeAttachment(selectionId, attachmentId);
     await getCurrentPage();
 });
 
-subscribe('getCurrentPage', getCurrentPage);
+panelView.subscribe('getCurrentPage', getCurrentPage);
 
 async function getCurrentPage() {
-    const [host, title] = await getExpressions(
-        'location.host',
-        'document.title || (x => x && x.innerText)(document.querySelector("h1"))'
-    );
-    const pages = await window.models.getPages(host);
-
-    let matchedPage = null;
-    let matchedElements = null;
-    let emptyPage = null;
-
-    for (const ctx of pages) {
-        matchedElements = await somethingMatchesIn(ctx);
-        if (matchedElements) {
-            matchedPage = ctx;
-            break;
-        }
-        if (ctx.get('selections').size === 0) {
-            emptyPage = ctx;
-        }
-    }
-
-    if (matchedPage) {
-        elm.ports.currentPage.send([
-            matchedPage.toJS(),
-            matchedElements,
-        ]);
-    } else {
-        if (!emptyPage) {
-            emptyPage = await window.models.createPage(host, title);
-        }
-
-        elm.ports.currentPage.send([
-            emptyPage.toJS(),
-            [],
-        ]);
-    }
-
-    async function somethingMatchesIn(ctx) {
-
-        const selections = ctx.get('selections');
-
-        const [results] = await getExpressions('[' +
-            selections
-                .map(s => 'window.queryAll(' + JSON.stringify(s.get('cssSelector')) + ')')
-                .join(', ') +
-            '].map(r => r.map(el => window.makeElement(el)))');
-
-        if (results.filter(x => x.length > 0).length === 0) {
-            return null;
-        }
-
-        const matchedSelections =
-            selections
-                .filter((s, i) => results[i].length > 0);
-
-        const filteredResults =
-            results
-                .filter(els => els.length > 0);
-
-        const matchedSelectionIds =
-            matchedSelections
-                .map((s, i) => [s.get('id'), filteredResults[i]])
-                .toJS();
-
-        for (const s of matchedSelections) {
-            const attachments = s.get('attachments');
-            if (attachments.size > 0) {
-                for (const sa of attachments) {
-                    const elements = await isVisibleAttachment(
-                        sa.cssSelector,
-                        sa.parentOffset,
-                        s.get('cssSelector'));
-
-                    if (elements.length > 0) {
-                        matchedSelectionIds.push([sa.id, elements]);
-                    }
-                }
-            }
-        }
-
-        function isVisibleAttachment(selector, offset, parentSelector) {
-            return callFn((selector, offset, parentSelector) => {
-                let scope = window.queryAll(parentSelector)[0];
-                if (scope) {
-                    while (offset > 0 && scope.parentNode) {
-                        offset += -1;
-                        scope = scope.parentNode;
-                    }
-                    return window.queryAll(selector, scope).map(el => window.makeElement(el));
-                }
-            }, [selector, offset, parentSelector]);
-        }
-
-        return matchedSelectionIds;
-    }
-
+    panelView.send('currentPage', await matchCurrentPage());
 }
 
-function callFn(fn, args = []) {
-    function evl(code) {
-        return new Promise((resolve, reject) => {
-            chrome.devtools.inspectedWindow.eval(code, { useContentScriptContext: true }, (result, err) => {
-                if (err) {
-                    return reject(err);
-                }
-                resolve(result);
-            });
-        });
-    }
-
-    const functionBody = fn.toString();
-    const functionArguments = args.map(x => JSON.stringify(x)).join(',');
-    return evl('(' + functionBody + ')(' + functionArguments + ')');
-}

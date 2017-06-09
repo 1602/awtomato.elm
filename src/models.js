@@ -15,6 +15,7 @@ module.exports = db => {
         createAttachment,
         removeAttachment,
         updateAttachment,
+        saveHtml,
     };
 
     async function createPage(hostname, name) {
@@ -141,7 +142,6 @@ module.exports = db => {
 
     function constructSelection(s) {
         const config = JSON.parse(s.config);
-        console.info('s.config', s.config);
 
         const selection = Map({
             id: s.id,
@@ -149,9 +149,13 @@ module.exports = db => {
             cssSelector: config.cssSelector,
             attachments: List(config.attachments || []),
         });
-        console.info('constructing selection', selection.toJS());
 
         return selection;
+    }
+
+    function saveHtml(pageId, html, url) {
+        return db.query('INSERT INTO html (id, pageId, url, html) VALUES (?, ?, ?, ?)',
+            [pageId, pageId, url, html]);
     }
 
 };

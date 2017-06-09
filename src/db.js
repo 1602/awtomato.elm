@@ -8,11 +8,11 @@ const db = openDatabase(
 );
 
 module.exports = {
-    connect,
+    migrate,
     query,
 };
 
-async function connect() {
+async function migrate() {
     await query(`
         CREATE TABLE IF NOT EXISTS pages (
             id VARCHAR(36) UNIQUE,
@@ -29,24 +29,27 @@ async function connect() {
             config TEXT
         )
     `, []);
+
+    await query(`
+        CREATE TABLE IF NOT EXISTS html (
+            id VARCHAR(36) UNIQUE,
+            pageId VARCHAR(36),
+            url VARCHAR(200),
+            html TEXT
+        )
+    `, []);
 }
 
 function query(sql, params) {
-    console.warn('will run sql query', sql);
-    return new Promise((resolve, reject) => {
-        db.transaction(tx => {
-            console.info('transaction', tx);
-            tx.executeSql(sql, params, (tx, results) => {
-                // console.info(results);
-                resolve([].slice.call(results.rows));
-            }, (tx, err) => {
-                console.error('hhhhhhh', tx, err);
-                reject(err);
-            });
-        }, function(nu, haha) {
-            console.warn('null data handler called', nu, haha);
-            console.info('here', arguments);
-            reject(nu);
-        });
-    });
+    // console.warn('will run sql query', sql);
+    return new Promise((resolve, reject) =>
+        db.transaction(tx => tx.executeSql(
+            sql,
+            params,
+            (tx, results) => resolve([].slice.call(results.rows)),
+            (tx, err) => reject(err)
+        ),
+        nu => reject(nu))
+    );
 }
+

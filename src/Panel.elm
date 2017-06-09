@@ -61,6 +61,8 @@ type Msg
     | RemoveSelection String
     | RemoveAttachment String String
     | SetActiveAttachment (Maybe String, Maybe String)
+    | SaveHtml
+    | AnalysePage
 
 
 main : Program Never Model Msg
@@ -75,6 +77,8 @@ main =
 
 
 -- PORTS
+
+port analysePage : String -> Cmd msg
 
 port removeSelection : String -> Cmd msg
 
@@ -130,6 +134,9 @@ port queryElements : Selector -> Cmd msg
 port visibilityChanges : (Bool -> msg) -> Sub msg
 
 
+port saveHtml : String -> Cmd msg
+
+
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
@@ -166,7 +173,7 @@ init =
         False
         ( "no filter", "", "" )
         (Just "")
-        ! []
+        ! [ analysePage "" ]
 
 
 -- getSelection : Model -> Maybe Selector
@@ -217,6 +224,12 @@ getAttachment selectionId attachmentId page =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        SaveHtml ->
+            model ! [ saveHtml "" ]
+
+        AnalysePage ->
+            model ! [ analysePage "" ]
+
         RemoveAttachment selId attId ->
             model ! [ removeAttachment (selId, attId) ]
 
@@ -535,6 +548,8 @@ view model =
                                 text ""
 
                     ]
+                , div [] [ Html.button [ onClick SaveHtml ] [ text "Save html" ] ]
+                , div [] [ Html.button [ onClick AnalysePage ] [ text "Analyse page" ] ]
                 ]
 
         Nothing ->

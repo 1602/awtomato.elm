@@ -1,7 +1,40 @@
 const {
     getSelector, getElementId, queryAll, getElementById,
-} = require('./selector-builder');
+} = require('./selector-builder.js');
 
+const { analysePage } = require('./page-analyser.js');
+
+getSelector;
+queryAll;
+
+const pageId = location.search && location.search.substr(1);
+
+const db = require('./db.js');
+
+(async () => {
+    const page = await db.query('SELECT * FROM html WHERE id = ?', [pageId]);
+    if (page.length) {
+        document.write(page[0].html);
+        const base = document.createElement('base');
+        base.href = page[0].url;
+        document.head.appendChild(base);
+    }
+})();
+
+window.analysePage = analysePage;
+
+const pads = {};
+
+function pad(n) {
+    if (!(n in pads)) {
+        pads[n] = '  '.repeat(n);
+    }
+    return pads[n];
+}
+
+pad;
+
+/*
 const s1 = span({ innerHTML: 's1' });
 const s2 = span({ innerHTML: 's2' });
 const s3 = span({ innerHTML: 's3' });
@@ -37,6 +70,8 @@ function tag(name, props = {}, childNodes = []) {
     childNodes.forEach(node => el.appendChild(node));
     return el;
 }
+*/
 
 window.getElementById = getElementById;
 window.getElementId = getElementId;
+
